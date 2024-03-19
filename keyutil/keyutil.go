@@ -15,6 +15,7 @@ const (
 	PKCS8        string = "pkcs8"
 	PKCS8_RSAPSS string = "pkcs8_rsapss" // Go doesn't support
 	PKIX         string = "pxix"
+	ECC          string = "ecc"
 )
 
 // MustReadPublicKeyFile reads a PEM encoded public key file or panics

@@ -14,6 +14,7 @@ const (
 	PKCS1        string = "pkcs1"
 	PKCS8        string = "pkcs8"
 	PKCS8_RSAPSS string = "pkcs8_rsapss" // Go doesn't support
+	ECC          string = "ecc"
 	PKIX         string = "pxix"
 )
 
@@ -68,6 +69,11 @@ func ReadPrivateKey(encodedPrivateKey []byte, hint ...string) (crypto.PrivateKey
 		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to parse private key with PKCS1: %w", err)
+		}
+	case ECC:
+		key, err = x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to parse EC private key: %w", err)
 		}
 	case PKCS8_RSAPSS:
 		// The rsa-pss key is PKCS8 encoded but the golang 1.12 parser doesn't recoganize the algorithm and gives 'PKCS#8 wrapping contained private key with unknown algorithm: 1.2.840.113549.1.1.10

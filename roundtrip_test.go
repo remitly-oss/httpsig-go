@@ -60,6 +60,26 @@ func TestRoundTrip(t *testing.T) {
 			}),
 			Profile: httpsig.DefaultVerifyProfile,
 		},
+		{
+			Name: "ECDSA-p265",
+			Params: httpsig.SigningOptions{
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key", keyutil.ECC),
+				Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
+				Fields:     httpsig.DefaultRequiredFields,
+				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:      "tst-ecdsa",
+				MetaKeyID:  "test-key-ecdsa",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ecdsa": {
+					KeyID:  "test-key-ecds",
+					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
+				},
+			}),
+			Profile: httpsig.DefaultVerifyProfile,
+		},
 	}
 
 	for _, tc := range testcases {

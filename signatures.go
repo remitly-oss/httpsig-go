@@ -2,6 +2,7 @@ package httpsig
 
 import (
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
@@ -71,10 +72,19 @@ func sign(hrr httpReqResp, sp sigParameters) error {
 		} else {
 			return fmt.Errorf("Invalid private key. Requires rsa.PrivateKey: %T", sp.PrivateKey)
 		}
+	case Algo_ECDSA_P256_SHA256:
+		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
+			msgHash := sha256.Sum256(base.base)
+			sigBytes, err = ecdsa.SignASN1(rand.Reader, eccpk, msgHash[:])
+			if err != nil {
+				return newError(ErrVerification, "Failed to sign with ecdsa private key", err)
+			}
+		} else {
+			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
+		}
 	case Algo_ED25519:
 		if edpk, ok := sp.PrivateKey.(ed25519.PrivateKey); ok {
 			sigBytes = ed25519.Sign(edpk, base.base)
-
 		} else {
 			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
 		}

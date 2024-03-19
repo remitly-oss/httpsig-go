@@ -111,7 +111,7 @@ func TestSpecVerify(t *testing.T) {
 			}
 
 			if verifyErr != nil {
-				t.Fatalf("%#v", err)
+				t.Fatalf("%#v\n", verifyErr)
 			}
 		})
 	}
