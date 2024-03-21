@@ -212,6 +212,7 @@ func (s *Signer) Sign(req *http.Request) error {
 			Base:       baseParams,
 			Algo:       s.options.Algorithm,
 			PrivateKey: s.options.PrivateKey,
+			Secret:     s.options.Secret,
 			Label:      DefaultSignatureLabel,
 		})
 }
@@ -248,11 +249,17 @@ func (sp SigningOptions) baseParameters(mdp MetadataProvider) (sigBaseInput, err
 }
 
 func (so SigningOptions) validate() error {
-	if so.PrivateKey == nil {
-		return fmt.Errorf("Missing required signing option 'PrivateKey'")
-	}
 	if so.Algorithm == "" {
 		return fmt.Errorf("Missing required signing option 'Algorithm'")
+	}
+	if so.Algorithm.symmetric() {
+		if len(so.Secret) == 0 {
+			return newError(ErrInvalidSignatureOptions, "Missing required signing option 'Secret'")
+		}
+	} else {
+		if so.PrivateKey == nil {
+			return newError(ErrInvalidSignatureOptions, "Missing required signing option 'PrivateKey'")
+		}
 	}
 
 	if !isSafeString(so.Label) {
@@ -288,6 +295,7 @@ func (so SigningOptions) validate() error {
 func (so SigningOptions) withDefaults() SigningOptions {
 	final := SigningOptions{
 		PrivateKey:          so.PrivateKey,
+		Secret:              so.Secret,
 		Algorithm:           so.Algorithm,
 		Fields:              so.Fields,
 		Metadata:            so.Metadata,
@@ -297,6 +305,7 @@ func (so SigningOptions) withDefaults() SigningOptions {
 		MetaExpiresDuration: so.MetaExpiresDuration,
 		MetaNonce:           NonceRandom32,
 	}
+	// Defaults
 	if final.Label == "" {
 		final.Label = DefaultSignatureLabel
 	}
@@ -318,6 +327,13 @@ func (sf SignedField) componentID() componentID {
 	}
 }
 
+func (a Algorithm) symmetric() bool {
+	switch a {
+	case Algo_HMAC_SHA256:
+		return true
+	}
+	return false
+}
 func componentsIDs(sfs []SignedField) []componentID {
 	cIDs := []componentID{}
 	for _, sf := range sfs {

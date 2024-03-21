@@ -82,6 +82,16 @@ func sign(hrr httpReqResp, sp sigParameters) error {
 		} else {
 			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
 		}
+	case Algo_ECDSA_P384_SHA384:
+		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
+			msgHash := sha512.Sum384(base.base)
+			sigBytes, err = ecdsa.SignASN1(rand.Reader, eccpk, msgHash[:])
+			if err != nil {
+				return newError(ErrVerification, "Failed to sign with ecdsa private key", err)
+			}
+		} else {
+			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
+		}
 	case Algo_ED25519:
 		if edpk, ok := sp.PrivateKey.(ed25519.PrivateKey); ok {
 			sigBytes = ed25519.Sign(edpk, base.base)
@@ -89,6 +99,9 @@ func sign(hrr httpReqResp, sp sigParameters) error {
 			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
 		}
 	case Algo_HMAC_SHA256:
+		if len(sp.Secret) == 0 {
+			return newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
+		}
 		msgHash := hmac.New(sha256.New, sp.Secret)
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		sigBytes = msgHash.Sum(nil)

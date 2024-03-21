@@ -313,6 +313,9 @@ func (ver *Verifier) verifySignature(r httpReqResp, sig extractedSignature) erro
 			return newError(ErrInvalidPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_HMAC_SHA256:
+		if len(ks.Secret) == 0 {
+			return newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
+		}
 		msgHash := hmac.New(sha256.New, ks.Secret)
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		calcualtedSignature := msgHash.Sum(nil)
@@ -322,6 +325,15 @@ func (ver *Verifier) verifySignature(r httpReqResp, sig extractedSignature) erro
 	case Algo_ECDSA_P256_SHA256:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
 			msgHash := sha256.Sum256(base.base)
+			if !ecdsa.VerifyASN1(epub, msgHash[:], sig.Signature) {
+				return newError(ErrVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+			}
+		} else {
+			return newError(ErrInvalidPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
+		}
+	case Algo_ECDSA_P384_SHA384:
+		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
+			msgHash := sha512.Sum384(base.base)
 			if !ecdsa.VerifyASN1(epub, msgHash[:], sig.Signature) {
 				return newError(ErrVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
