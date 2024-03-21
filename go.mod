@@ -1,4 +1,4 @@
-module github.com/leelynne/httpsig
+module github.com/remitly-oss/httpsig
 
 go 1.21.4
 
