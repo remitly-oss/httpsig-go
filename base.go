@@ -10,12 +10,6 @@ import (
 	sfv "github.com/dunglas/httpsfv"
 )
 
-// componentID is the signature 'component identifier' as detailed in the specification.
-type componentID struct {
-	Name string   // canonical, lower case component name. The name is also the value of the Item.
-	Item sfv.Item // The sfv representation of the component identifier. This contains the name and parameters.
-}
-
 // sigBaseInput is the required input to calculate the signature base
 type sigBaseInput struct {
 	Components     []componentID
@@ -23,13 +17,13 @@ type sigBaseInput struct {
 	MetadataValues MetadataProvider
 }
 
-type httpReqResp struct {
+type httpMessage struct {
 	IsResponse bool
 	Req        *http.Request
 	Resp       *http.Response
 }
 
-func (hrr httpReqResp) Headers() http.Header {
+func (hrr httpMessage) Headers() http.Header {
 	if hrr.IsResponse {
 		return hrr.Resp.Header
 	}
@@ -40,7 +34,7 @@ func (hrr httpReqResp) Headers() http.Header {
 calculateSignatureBase calculates the 'signature base' - the data used as the input to signing or verifying
 The signature base is an ASCII string containing the canonicalized HTTP message components covered by the signature.
 */
-func calculateSignatureBase(r httpReqResp, bp sigBaseInput) (signatureBase, error) {
+func calculateSignatureBase(msg httpMessage, bp sigBaseInput) (signatureBase, error) {
 	signatureParams := sfv.InnerList{
 		Items:  []sfv.Item{},
 		Params: sfv.NewParams(),
@@ -50,36 +44,22 @@ func calculateSignatureBase(r httpReqResp, bp sigBaseInput) (signatureBase, erro
 
 	// Add all the required components
 	for _, component := range bp.Components {
-		/* Get component name */
-		// The serialized component name is the sfv StringItem which may contain parameters. This is also the unique key.
-		name, err := sfv.Marshal(component.Item)
+		name, err := component.signatureName()
 		if err != nil {
-			return signatureBase{}, newError(ErrInvalidComponent, fmt.Sprintf("Unable to serialize component identifier '%s'", component.Name), err)
+			return signatureBase{}, err
 		}
 		if slices.Contains(componentNames, name) {
 			return signatureBase{}, newError(ErrInvalidSignatureOptions, fmt.Sprintf("Repeated component name not allowed: '%s'", name))
 		}
-		signatureParams.Items = append(signatureParams.Items, component.Item)
 		componentNames = append(componentNames, name)
+		signatureParams.Items = append(signatureParams.Items, component.Item)
 
-		/* Get component value */
-		// TODO Handle parameters
-		var componentValue string
-		if strings.HasPrefix(component.Name, "@") {
-			componentValue, err = deriveComponentValue(r, component)
-			if err != nil {
-				return signatureBase{}, err
-			}
-		} else {
-			values := r.Headers().Values(component.Name)
-			// TODO Handle multi value
-			if len(values) > 1 {
-				return signatureBase{}, newError(ErrUnsupported, fmt.Sprintf("This library does yet support signatures for components/headers with multiple values: %s", component.Name))
-			}
-			componentValue = r.Headers().Get(component.Name)
+		value, err := component.signatureValue(msg)
+		if err != nil {
+			return signatureBase{}, err
 		}
 
-		base.WriteString(fmt.Sprintf("%s: %s\n", name, componentValue))
+		base.WriteString(fmt.Sprintf("%s: %s\n", name, value))
 	}
 
 	// Add signature metadata parameters
@@ -138,7 +118,41 @@ func calculateSignatureBase(r httpReqResp, bp sigBaseInput) (signatureBase, erro
 	}, nil
 }
 
-func deriveComponentValue(r httpReqResp, component componentID) (string, error) {
+// componentID is the signature 'component identifier' as detailed in the specification.
+type componentID struct {
+	Name string   // canonical, lower case component name. The name is also the value of the Item.
+	Item sfv.Item // The sfv representation of the component identifier. This contains the name and parameters.
+}
+
+// SignatureName is the components serialized name required by the signature.
+func (cID componentID) signatureName() (string, error) {
+	signame, err := sfv.Marshal(cID.Item)
+	if err != nil {
+		return "", newError(ErrInvalidComponent, fmt.Sprintf("Unable to serialize component identifier '%s'", cID.Name), err)
+	}
+	return signame, nil
+}
+
+// signatureValue is the components value required by the signature.
+func (cID componentID) signatureValue(msg httpMessage) (string, error) {
+	val := ""
+	var err error
+	if strings.HasPrefix(cID.Name, "@") {
+		val, err = deriveComponentValue(msg, cID)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		values := msg.Headers().Values(cID.Name)
+		// TODO Handle multi value
+		if len(values) > 1 {
+			return "", newError(ErrUnsupported, fmt.Sprintf("This library does yet support signatures for components/headers with multiple values: %s", cID.Name))
+		}
+		val = msg.Headers().Get(cID.Name)
+	}
+	return val, nil
+}
+func deriveComponentValue(r httpMessage, component componentID) (string, error) {
 	if r.IsResponse {
 		return deriveComponentValueResponse(r.Resp, component)
 	}

@@ -359,7 +359,7 @@ func TestSpecRecreateSignature(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err = sign(httpReqResp{
+			err = sign(httpMessage{
 				Req: req,
 			}, tc.Params)
 			if err != nil {
