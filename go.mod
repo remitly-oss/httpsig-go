@@ -1,4 +1,4 @@
-module github.com/remitly-oss/httpsig
+module github.com/remitly-oss/httpsig-go
 
 go 1.21.4
 
