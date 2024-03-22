@@ -19,7 +19,7 @@ func NewHTTPClient(hc *http.Client, signer *Signer, verifier *Verifier) *http.Cl
 	return hc
 }
 
-// NewTransport returns an http.RoundTripper implementation that signs requests and verifies responses if signer and verifier are not nill. If rt is nil http.DefaultTransport is used.
+// NewTransport returns an http.RoundTripper implementation that signs requests and verifies responses if signer and verifier are not nil. If rt is nil http.DefaultTransport is used.
 func NewTransport(rt http.RoundTripper, signer *Signer, verifier *Verifier) http.RoundTripper {
 	if rt == nil {
 		rt = http.DefaultTransport
@@ -34,6 +34,7 @@ func NewTransport(rt http.RoundTripper, signer *Signer, verifier *Verifier) http
 	}
 }
 
+// VerifyHandler verifies the http signature of each request. If not verified it returns a 401 Unauthorized HTTP error. If verified it puts the verification result in the requests context. Use GetVerifyResult to read the context.
 type VerifyHandler struct {
 	handler  http.Handler
 	verifier *Verifier
@@ -63,6 +64,7 @@ func (vh VerifyHandler) ServeHTTP(rw http.ResponseWriter, inReq *http.Request) {
 	vh.handler.ServeHTTP(rw, req)
 }
 
+// GetVerifyResult returns the results of a successful request signature verification.
 func GetVerifyResult(ctx context.Context) (v VerifyResult, found bool) {
 	if vr, ok := ctx.Value(verifyKey).(*VerifyResult); ok && vr != nil {
 		return *vr, true
