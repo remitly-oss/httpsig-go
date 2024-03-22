@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/leelynne/httpsig"
+	"github.com/remitly-oss/httpsig-go"
 )
 
 const (
