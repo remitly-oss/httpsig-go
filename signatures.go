@@ -39,7 +39,7 @@ type sigParameters struct {
 	Secret     []byte
 }
 
-func sign(hrr httpReqResp, sp sigParameters) error {
+func sign(hrr httpMessage, sp sigParameters) error {
 	base, err := calculateSignatureBase(hrr, sp.Base)
 	if err != nil {
 		return err

@@ -23,13 +23,13 @@ type sigBaseInput struct {
 	MetadataValues MetadataProvider
 }
 
-type httpReqResp struct {
+type httpMessage struct {
 	IsResponse bool
 	Req        *http.Request
 	Resp       *http.Response
 }
 
-func (hrr httpReqResp) Headers() http.Header {
+func (hrr httpMessage) Headers() http.Header {
 	if hrr.IsResponse {
 		return hrr.Resp.Header
 	}
@@ -40,7 +40,7 @@ func (hrr httpReqResp) Headers() http.Header {
 calculateSignatureBase calculates the 'signature base' - the data used as the input to signing or verifying
 The signature base is an ASCII string containing the canonicalized HTTP message components covered by the signature.
 */
-func calculateSignatureBase(r httpReqResp, bp sigBaseInput) (signatureBase, error) {
+func calculateSignatureBase(r httpMessage, bp sigBaseInput) (signatureBase, error) {
 	signatureParams := sfv.InnerList{
 		Items:  []sfv.Item{},
 		Params: sfv.NewParams(),
@@ -138,7 +138,7 @@ func calculateSignatureBase(r httpReqResp, bp sigBaseInput) (signatureBase, erro
 	}, nil
 }
 
-func deriveComponentValue(r httpReqResp, component componentID) (string, error) {
+func deriveComponentValue(r httpMessage, component componentID) (string, error) {
 	if r.IsResponse {
 		return deriveComponentValueResponse(r.Resp, component)
 	}

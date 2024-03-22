@@ -118,19 +118,19 @@ func NewVerifier(kf KeyFetcher, profile VerifyProfile) (*Verifier, error) {
 }
 
 func (ver *Verifier) Verify(req *http.Request) (VerifyResult, error) {
-	return ver.verify(httpReqResp{
+	return ver.verify(httpMessage{
 		Req: req,
 	})
 }
 
 func (ver *Verifier) VerifyResponse(resp *http.Response) (VerifyResult, error) {
-	return ver.verify(httpReqResp{
+	return ver.verify(httpMessage{
 		IsResponse: true,
 		Resp:       resp,
 	})
 }
 
-func (ver *Verifier) verify(hrr httpReqResp) (VerifyResult, error) {
+func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 	vres := VerifyResult{
 		Signatures: []VerifiedSignature{},
 	}
@@ -263,7 +263,7 @@ func extractSignatures(headers http.Header) (extractedSignatures, error) {
 	return extracted, nil
 }
 
-func (ver *Verifier) verifySignature(r httpReqResp, sig extractedSignature) error {
+func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) error {
 	base, err := calculateSignatureBase(r, sig.Input)
 	if err != nil {
 		return err
