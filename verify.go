@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
+	"math/big"
 	"net/http"
 	"slices"
 	"time"
@@ -324,8 +325,16 @@ func (ver *Verifier) verifySignature(r httpReqResp, sig extractedSignature) erro
 		}
 	case Algo_ECDSA_P256_SHA256:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
+			if len(sig.Signature) != 64 {
+				return newError(ErrInvalidSignature, fmt.Sprintf("Signature must be 64 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
+			}
 			msgHash := sha256.Sum256(base.base)
-			if !ecdsa.VerifyASN1(epub, msgHash[:], sig.Signature) {
+			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
+			r := new(big.Int)
+			r.SetBytes(sig.Signature[0:32])
+			s := new(big.Int)
+			s.SetBytes(sig.Signature[32:64])
+			if !ecdsa.Verify(epub, msgHash[:], r, s) {
 				return newError(ErrVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
