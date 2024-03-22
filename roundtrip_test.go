@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/remitly-oss/httpsig"
-	"github.com/remitly-oss/httpsig/keyutil"
+	"github.com/remitly-oss/httpsig-go"
+	"github.com/remitly-oss/httpsig-go/keyutil"
 )
 
 func TestRoundTrip(t *testing.T) {
