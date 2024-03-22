@@ -57,7 +57,6 @@ func TestSpecVerify(t *testing.T) {
 				PubKey: readTestPubkey(t, "test-key-ecc-p256.pub"),
 			},
 			SignedRequestOrResonseFile: "b24_response_signed.txt",
-			Skip:                       true, // Doesn't verify?!
 		},
 		{
 			Name: "b25",
@@ -360,7 +359,7 @@ func TestSpecRecreateSignature(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err = sign(httpReqResp{
+			err = sign(httpMessage{
 				Req: req,
 			}, tc.Params)
 			if err != nil {

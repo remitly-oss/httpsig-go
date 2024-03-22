@@ -206,7 +206,7 @@ func (s *Signer) Sign(req *http.Request) error {
 	}
 
 	return sign(
-		httpReqResp{
+		httpMessage{
 			Req: req,
 		}, sigParameters{
 			Base:       baseParams,
@@ -223,7 +223,7 @@ func (s *Signer) SignResponse(resp *http.Response) error {
 	}
 
 	return sign(
-		httpReqResp{
+		httpMessage{
 			IsResponse: true,
 			Resp:       resp,
 		}, sigParameters{

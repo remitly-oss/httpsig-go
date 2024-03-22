@@ -130,7 +130,7 @@ func TestSignatureBase(t *testing.T) {
 
 func runTestSigBase(t *testing.T, tc testcaseSigBase) {
 	sourceFile := tc.SourceFile
-	hrr := httpReqResp{
+	hrr := httpMessage{
 		IsResponse: tc.IsResponse,
 	}
 	if tc.IsResponse {
