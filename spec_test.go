@@ -57,7 +57,6 @@ func TestSpecVerify(t *testing.T) {
 				PubKey: readTestPubkey(t, "test-key-ecc-p256.pub"),
 			},
 			SignedRequestOrResonseFile: "b24_response_signed.txt",
-			Skip:                       true, // Doesn't verify?!
 		},
 		{
 			Name: "b25",
