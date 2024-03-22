@@ -89,10 +89,14 @@ func sign(hrr httpReqResp, sp sigParameters) error {
 	case Algo_ECDSA_P384_SHA384:
 		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
 			msgHash := sha512.Sum384(base.base)
-			sigBytes, err = ecdsa.SignASN1(rand.Reader, eccpk, msgHash[:])
+			r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
 			if err != nil {
 				return newError(ErrVerification, "Failed to sign with ecdsa private key", err)
 			}
+			// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
+			sigBytes = make([]byte, 96)
+			r.FillBytes(sigBytes[0:48])
+			s.FillBytes(sigBytes[48:96])
 		} else {
 			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
 		}
