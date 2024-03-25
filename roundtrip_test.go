@@ -61,6 +61,25 @@ func TestRoundTrip(t *testing.T) {
 			Profile: httpsig.DefaultVerifyProfile,
 		},
 		{
+			Name: "HMAC_SHA256",
+			Params: httpsig.SigningOptions{
+				Secret:    mustReadFile("testdata/test-shared-secret"),
+				Algorithm: httpsig.Algo_HMAC_SHA256,
+				Fields:    httpsig.DefaultRequiredFields,
+				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				MetaKeyID: "test-key-shared",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-shared": {
+					KeyID:  "test-key-shared",
+					Algo:   httpsig.Algo_HMAC_SHA256,
+					Secret: mustReadFile("testdata/test-shared-secret"),
+				},
+			}),
+			Profile: httpsig.DefaultVerifyProfile,
+		},
+		{
 			Name: "ECDSA-p265",
 			Params: httpsig.SigningOptions{
 				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key", keyutil.ECC),
@@ -76,6 +95,46 @@ func TestRoundTrip(t *testing.T) {
 					KeyID:  "test-key-ecds",
 					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
+				},
+			}),
+			Profile: httpsig.DefaultVerifyProfile,
+		},
+		{
+			Name: "ECDSA-p384",
+			Params: httpsig.SigningOptions{
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p384.key", keyutil.ECC),
+				Algorithm:  httpsig.Algo_ECDSA_P384_SHA384,
+				Fields:     httpsig.DefaultRequiredFields,
+				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:      "tst-ecdsa",
+				MetaKeyID:  "test-key-ecdsa",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ecdsa": {
+					KeyID:  "test-key-ecdsa",
+					Algo:   httpsig.Algo_ECDSA_P384_SHA384,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p384.pub"),
+				},
+			}),
+			Profile: httpsig.DefaultVerifyProfile,
+		},
+		{
+			Name: "ED25519",
+			Params: httpsig.SigningOptions{
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ed25519.key"),
+				Algorithm:  httpsig.Algo_ED25519,
+				Fields:     httpsig.DefaultRequiredFields,
+				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:      "tst-ed",
+				MetaKeyID:  "test-key-ed",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ed": {
+					KeyID:  "test-key-ed",
+					Algo:   httpsig.Algo_ED25519,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
 				},
 			}),
 			Profile: httpsig.DefaultVerifyProfile,
@@ -100,11 +159,11 @@ func TestRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = ver.Verify(req)
+			vf, err := ver.Verify(req)
 			if err != nil {
 				t.Fatalf("%#v", err)
-
 			}
+			t.Logf("%+v\n", vf)
 		})
 
 	}
@@ -121,4 +180,12 @@ func readRequest(t testing.TB, reqFile string) *http.Request {
 		t.Fatal(err)
 	}
 	return req
+}
+
+func mustReadFile(file string) []byte {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

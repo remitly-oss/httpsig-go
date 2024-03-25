@@ -314,6 +314,9 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) erro
 			return newError(ErrInvalidPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_HMAC_SHA256:
+		if len(ks.Secret) == 0 {
+			return newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
+		}
 		msgHash := hmac.New(sha256.New, ks.Secret)
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		calcualtedSignature := msgHash.Sum(nil)
@@ -331,6 +334,23 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) erro
 			r.SetBytes(sig.Signature[0:32])
 			s := new(big.Int)
 			s.SetBytes(sig.Signature[32:64])
+			if !ecdsa.Verify(epub, msgHash[:], r, s) {
+				return newError(ErrVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+			}
+		} else {
+			return newError(ErrInvalidPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
+		}
+	case Algo_ECDSA_P384_SHA384:
+		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
+			if len(sig.Signature) != 96 {
+				return newError(ErrInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
+			}
+			msgHash := sha512.Sum384(base.base)
+			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
+			r := new(big.Int)
+			r.SetBytes(sig.Signature[0:48])
+			s := new(big.Int)
+			s.SetBytes(sig.Signature[48:96])
 			if !ecdsa.Verify(epub, msgHash[:], r, s) {
 				return newError(ErrVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
