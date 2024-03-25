@@ -1,6 +1,9 @@
 package httpsig_test
 
 import (
+	"fmt"
+	"html"
+	"net/http"
 	"net/http/httptest"
 
 	"github.com/remitly-oss/httpsig-go"
@@ -47,4 +50,48 @@ MTQ7eYQXwqpTvTJkuTffGXKLilT75wY2YZWfybv9flu5d6bCfw+4UB9+cg==
 	})
 
 	httpsig.Verify(req, kf, httpsig.DefaultVerifyProfile)
+}
+
+func ExampleNewHandler() {
+	myhandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Lookup the results of verification
+		if veriftyResult, ok := httpsig.GetVerifyResult(r.Context()); ok {
+			keyid, _ := veriftyResult.KeyID()
+			fmt.Fprintf(w, "Hello, %s", keyid)
+		} else {
+			fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
+		}
+	})
+
+	// Create a verifier
+	verifier, _ := httpsig.NewVerifier(nil, httpsig.DefaultVerifyProfile)
+
+	mux := http.NewServeMux()
+	// Wrap the handler with the a signature verification handler.
+	mux.Handle("/", httpsig.NewHandler(myhandler, verifier))
+}
+
+func ExampleClient() {
+	params := httpsig.SigningOptions{
+		PrivateKey: nil, // Fill in your private key
+		Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
+		Fields:     httpsig.DefaultRequiredFields,
+		Metadata:   []httpsig.Metadata{httpsig.MetaKeyID},
+		MetaKeyID:  "key123",
+	}
+
+	// Create the signature signer
+	signer, _ := httpsig.NewSigner(params)
+
+	// Create a net/http Client that signs all requests
+	signingClient := httpsig.NewHTTPClient(nil, signer, nil)
+
+	// This call will be signed.
+	signingClient.Get("https://example.com")
+
+	verifier, _ := httpsig.NewVerifier(nil, httpsig.DefaultVerifyProfile)
+	// Create a net/http Client that signs and verifies all requests
+	signVerifyClient := httpsig.NewHTTPClient(nil, signer, verifier)
+
+	signVerifyClient.Get("https://example.com")
 }

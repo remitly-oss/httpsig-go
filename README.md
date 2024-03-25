@@ -8,8 +8,51 @@ An implementation of HTTP Message Signatures from [RFC 9421](https://datatracker
 HTTP signaturs are a mechanism for signing and verifying HTTP requests and responses.
 
 ## Supported Features
+The full specification is supported with the exception of the following. File a ticket or PR and support will be added
+Planned but not currently supported features:
+- JWS algorithms
+- Header parameters including trailers
 
-## Implementation
+## net/http integration
+Create net/http clients that sign requests and/or verifies repsonses.
+``` 
+	params := httpsig.SigningOptions{
+		PrivateKey: nil, // Fill in your private key
+		Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
+		Fields:     httpsig.DefaultRequiredFields,
+		Metadata:   []httpsig.Metadata{httpsig.MetaKeyID},
+		MetaKeyID:  "key123",
+	}
+
+	// Create the signature signer
+	signer, _ := httpsig.NewSigner(params)
+
+	// Create a net/http Client that signs all requests
+	signingClient := httpsig.NewHTTPClient(nil, signer, nil)
+```
+
+Create net/http Handlers that verify incoming requests to the server.
+```
+	myhandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Lookup the results of verification
+		if veriftyResult, ok := httpsig.GetVerifyResult(r.Context()); ok {
+			keyid, _ := veriftyResult.KeyID()
+			fmt.Fprintf(w, "Hello, %s", keyid)
+		} else {
+			fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
+		}
+	})
+
+	// Create a verifier
+	verifier, _ := httpsig.NewVerifier(nil, httpsig.DefaultVerifyProfile)
+
+	mux := http.NewServeMux()
+	// Wrap the handler with the a signature verification handler.
+	mux.Handle("/", httpsig.NewHandler(myhandler, verifier))
+```
+
+## Stability
+The public interface may change slightly before the v1 release.
 
 ## References
 
