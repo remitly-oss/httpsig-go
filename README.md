@@ -15,7 +15,7 @@ Planned but not currently supported features:
 
 ## net/http integration
 Create net/http clients that sign requests and/or verifies repsonses.
-``` 
+```go
 	params := httpsig.SigningOptions{
 		PrivateKey: nil, // Fill in your private key
 		Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
