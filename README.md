@@ -32,7 +32,7 @@ Create net/http clients that sign requests and/or verifies repsonses.
 ```
 
 Create net/http Handlers that verify incoming requests to the server.
-```
+```go
 	myhandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Lookup the results of verification
 		if veriftyResult, ok := httpsig.GetVerifyResult(r.Context()); ok {
