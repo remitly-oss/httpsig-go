@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/remitly-oss/httpsig-go"
+	"github.com/remitly-oss/httpsig-go/keyman"
 	"github.com/remitly-oss/httpsig-go/keyutil"
 )
 
@@ -31,7 +32,7 @@ func TestRoundTrip(t *testing.T) {
 				MetaKeyID:  "test-key-rsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-rsa": {
 					KeyID:  "test-key-rsa",
 					Algo:   httpsig.Algo_RSA_PSS_SHA512,
@@ -51,7 +52,7 @@ func TestRoundTrip(t *testing.T) {
 				MetaKeyID:  "test-key-rsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-rsa": {
 					KeyID:  "test-key-rsa",
 					Algo:   httpsig.Algo_RSA_v1_5_sha256,
@@ -70,7 +71,7 @@ func TestRoundTrip(t *testing.T) {
 				MetaKeyID: "test-key-shared",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-shared": {
 					KeyID:  "test-key-shared",
 					Algo:   httpsig.Algo_HMAC_SHA256,
@@ -90,7 +91,7 @@ func TestRoundTrip(t *testing.T) {
 				MetaKeyID:  "test-key-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecds",
 					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
@@ -110,7 +111,7 @@ func TestRoundTrip(t *testing.T) {
 				MetaKeyID:  "test-key-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecdsa",
 					Algo:   httpsig.Algo_ECDSA_P384_SHA384,
@@ -130,7 +131,7 @@ func TestRoundTrip(t *testing.T) {
 				MetaKeyID:  "test-key-ed",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-ed": {
 					KeyID:  "test-key-ed",
 					Algo:   httpsig.Algo_ED25519,

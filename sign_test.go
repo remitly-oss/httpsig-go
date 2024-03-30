@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/remitly-oss/httpsig-go/keyutil"
 )
 
 // testcaseSigBase is a test case for signature bases
@@ -213,7 +214,7 @@ func readTestPubkey(t *testing.T, pubkeyFile string) crypto.PublicKey {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pubkey, err := ReadPublicKey(keybytes)
+	pubkey, err := keyutil.ReadPublicKey(keybytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +226,7 @@ func readTestPrivateKey(t testing.TB, pkFile string, hint ...string) crypto.Priv
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkey, err := ReadPrivateKey(keybytes)
+	pkey, err := keyutil.ReadPrivateKey(keybytes)
 	if err != nil {
 		t.Fatal(err)
 	}
