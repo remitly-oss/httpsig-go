@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/remitly-oss/httpsig-go"
+	"github.com/remitly-oss/httpsig-go/keyman"
 	"github.com/remitly-oss/httpsig-go/keyutil"
 )
 
@@ -41,7 +42,7 @@ MTQ7eYQXwqpTvTJkuTffGXKLilT75wY2YZWfybv9flu5d6bCfw+4UB9+cg==
 	pubkey, _ := keyutil.ReadPublicKey([]byte(pubkeyEncoded))
 	req := httptest.NewRequest("GET", "https://example.com/data", nil)
 
-	kf := keyutil.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+	kf := keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 		"key123": {
 			KeyID:  "key123",
 			Algo:   httpsig.Algo_ECDSA_P256_SHA256,
