@@ -15,11 +15,12 @@ import (
 func TestRoundTrip(t *testing.T) {
 
 	testcases := []struct {
-		Name        string
-		Params      httpsig.SigningOptions
-		RequestFile string
-		Keys        httpsig.KeyFetcher
-		Profile     httpsig.VerifyProfile
+		Name                  string
+		Params                httpsig.SigningOptions
+		RequestFile           string
+		Keys                  httpsig.KeyFetcher
+		Profile               httpsig.VerifyProfile
+		ExpectedErrCodeVerify httpsig.ErrCode
 	}{
 		{
 			Name: "RSA-PSS",
@@ -140,6 +141,27 @@ func TestRoundTrip(t *testing.T) {
 			}),
 			Profile: httpsig.DefaultVerifyProfile,
 		},
+		{
+			Name: "BadDigest",
+			Params: httpsig.SigningOptions{
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ed25519.key"),
+				Algorithm:  httpsig.Algo_ED25519,
+				Fields:     httpsig.DefaultRequiredFields,
+				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:      "tst-content-digest",
+				MetaKeyID:  "test-key-ed",
+			},
+			RequestFile: "request_bad_digest.txt",
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ed": {
+					KeyID:  "test-key-ed",
+					Algo:   httpsig.Algo_ED25519,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
+				},
+			}),
+			Profile:               httpsig.DefaultVerifyProfile,
+			ExpectedErrCodeVerify: httpsig.ErrInvalidDigest,
+		},
 	}
 
 	for _, tc := range testcases {
@@ -162,7 +184,15 @@ func TestRoundTrip(t *testing.T) {
 			}
 			vf, err := ver.Verify(req)
 			if err != nil {
-				t.Fatalf("%#v", err)
+				if tc.ExpectedErrCodeVerify != "" {
+					if sigerr, ok := err.(*httpsig.SignatureError); ok {
+						httpsig.Diff(t, tc.ExpectedErrCodeVerify, sigerr.Code, "Wrong err code")
+					}
+				} else {
+					t.Fatalf("%#v", err)
+				}
+			} else if tc.ExpectedErrCodeVerify != "" {
+				t.Fatal("Expected error")
 			}
 			t.Logf("%+v\n", vf)
 		})

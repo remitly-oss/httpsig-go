@@ -14,6 +14,7 @@ import (
 )
 
 type Algorithm string
+type Digest string
 
 // Metadata are the named signature metadata parameters
 type Metadata string
@@ -33,6 +34,9 @@ const (
 	Algo_ECDSA_P256_SHA256 Algorithm = "ecdsa-p256-sha256"
 	Algo_ECDSA_P384_SHA384 Algorithm = "ecdsa-p384-sha384"
 	Algo_ED25519           Algorithm = "ed25519"
+
+	DigestSHA256 Digest = "sha-256"
+	DigestSHA512 Digest = "sha-512"
 
 	// Signature metadata parameters
 	MetaCreated   Metadata = "created"
@@ -56,6 +60,9 @@ const (
 	ErrInvalidAlgorithm        ErrCode = "invalid_algorithm"
 	ErrInvalidMetadata         ErrCode = "invalid_metadata"
 	ErrInvalidPublicKey        ErrCode = "invalid_public_key"
+	ErrInvalidDigest           ErrCode = "invalid_digest"
+	ErrInvalidDigestAlgorithm  ErrCode = "invalid_digest_algorithm"
+	ErrInvalidHeader           ErrCode = "invalid_header"
 	ErrMissingSignature        ErrCode = "missing_signature"
 	ErrVerification            ErrCode = "verification" // The signature did not verify according to the algorithm.
 	ErrKeyFetch                ErrCode = "key_fetch"    // An error looking up the key for a signature
@@ -66,10 +73,10 @@ type SigningOptions struct {
 	PrivateKey crypto.PrivateKey // Required for asymetric algorithms
 	Secret     []byte            // Required for HMAC signing
 	Algorithm  Algorithm
-
-	Fields   []SignedField // Fields and Derived components to sign
-	Metadata []Metadata    // Metadata parameters to add to the signature
-	Label    string        // The signature label. Defaults to DefaultSignatureLabel
+	Digest     Digest        // The http digest algorithm to apply. Defaults to sha-256.
+	Fields     []SignedField // Fields and Derived components to sign
+	Metadata   []Metadata    // Metadata parameters to add to the signature
+	Label      string        // The signature label. Defaults to DefaultSignatureLabel
 
 	// Signature metadata settings.
 	// These are only added to the signature if the parameter is listed in the Metadata list.
@@ -158,12 +165,24 @@ type SignedField struct {
 	Parameters map[string]any // Parameters are modifiers applied to the field that changes the way the signature is calculated.
 }
 
+type signedFields []SignedField
+
+func (sf signedFields) includes(field string) bool {
+	target := strings.ToLower(field)
+	for _, fld := range sf {
+		if fld.Name == target {
+			return true
+		}
+	}
+	return false
+}
+
 // Fields turns a list of fields into the full specification. Used when the signed fields/components do not need to specify any parameters
 func Fields(fields ...string) []SignedField {
 	all := []SignedField{}
 	for _, field := range fields {
 		all = append(all, SignedField{
-			Name:       field,
+			Name:       strings.ToLower(field),
 			Parameters: map[string]any{},
 		})
 	}
@@ -199,7 +218,23 @@ func NewSigner(params SigningOptions, mdp ...MetadataProvider) (*Signer, error) 
 	return s, nil
 }
 
+// Sign signs the request and adds the signature headers to the request.
+// If the signature fields includes Content-Digest and Content-Digest is not already included in the request then Sign will read the request body to calculate the digest and set the header.  The request body will be replaced with a new io.ReaderCloser.
 func (s *Signer) Sign(req *http.Request) error {
+	// Add the content-digest if covered by the signature and not already present
+	if signedFields(s.options.Fields).includes("content-digest") && req.Header.Get("Content-Digest") == "" {
+		digest, newBody, err := digestBody(s.options.Digest, req.Body)
+		if err != nil {
+			return err
+		}
+		req.Body = newBody
+		digestValue, err := createDigestHeader(s.options.Digest, digest)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Digest", digestValue)
+	}
+
 	baseParams, err := s.options.baseParameters(s.mdp)
 	if err != nil {
 		return err
@@ -297,6 +332,7 @@ func (so SigningOptions) withDefaults() SigningOptions {
 		PrivateKey:          so.PrivateKey,
 		Secret:              so.Secret,
 		Algorithm:           so.Algorithm,
+		Digest:              so.Digest,
 		Fields:              so.Fields,
 		Metadata:            so.Metadata,
 		Label:               so.Label,
@@ -311,6 +347,9 @@ func (so SigningOptions) withDefaults() SigningOptions {
 	}
 	if final.MetaExpiresDuration == 0 {
 		final.MetaExpiresDuration = time.Minute * 5
+	}
+	if final.Digest == "" {
+		final.Digest = DigestSHA256
 	}
 
 	return final
