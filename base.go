@@ -2,6 +2,7 @@ package httpsig
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -28,6 +29,21 @@ func (hrr httpMessage) Headers() http.Header {
 		return hrr.Resp.Header
 	}
 	return hrr.Req.Header
+}
+
+func (hrr httpMessage) Body() io.ReadCloser {
+	if hrr.IsResponse {
+		return hrr.Resp.Body
+	}
+	return hrr.Req.Body
+}
+
+func (hrr httpMessage) SetBody(body io.ReadCloser) {
+	if hrr.IsResponse {
+		hrr.Resp.Body = body
+		return
+	}
+	hrr.Req.Body = body
 }
 
 /*
@@ -144,6 +160,9 @@ func (cID componentID) signatureValue(msg httpMessage) (string, error) {
 		}
 	} else {
 		values := msg.Headers().Values(cID.Name)
+		if len(values) == 0 {
+			return "", newError(ErrInvalidComponent, fmt.Sprintf("Message is missing required component '%s'", cID.Name))
+		}
 		// TODO Handle multi value
 		if len(values) > 1 {
 			return "", newError(ErrUnsupported, fmt.Sprintf("This library does yet support signatures for components/headers with multiple values: %s", cID.Name))

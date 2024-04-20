@@ -1,6 +1,7 @@
 package httpsig
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -133,6 +134,21 @@ func (ver *Verifier) VerifyResponse(resp *http.Response) (VerifyResult, error) {
 func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 	vres := VerifyResult{
 		Signatures: []VerifiedSignature{},
+	}
+
+	if hrr.Headers().Get("Content-Digest") != "" {
+		digestAlgo, expectedDigest, err := getSupportedDigestFromHeader(hrr.Headers().Values("Content-Digest"))
+		if err != nil {
+			return vres, err
+		}
+		actualDigest, newBody, err := digestBody(digestAlgo, hrr.Body())
+		if err != nil {
+			return vres, err
+		}
+		hrr.SetBody(newBody)
+		if !bytes.Equal(expectedDigest, actualDigest) {
+			return vres, newError(ErrInvalidDigest, "Digest does not match")
+		}
 	}
 
 	/* extract signatures */

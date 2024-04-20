@@ -27,12 +27,13 @@ type testcaseSigBase struct {
 func TestSignatureBase(t *testing.T) {
 	cases := []testcaseSigBase{
 		{
-			Name: "RepatedComponents",
+			Name: "RepeatedComponents",
 			Params: sigBaseInput{
 				Components:     makeComponents("one", "two", "one", "three"),
 				MetadataParams: []Metadata{},
 				MetadataValues: emptyMeta,
 			},
+			SourceFile:  "request_repeated_components.txt",
 			ExpectedErr: ErrInvalidSignatureOptions,
 		},
 		{
@@ -57,7 +58,7 @@ func TestSignatureBase(t *testing.T) {
 		{
 			Name: "BadMeta-Created",
 			Params: sigBaseInput{
-				Components: makeComponents(""),
+				Components: makeComponents(),
 				MetadataParams: []Metadata{
 					MetaCreated,
 				},
@@ -68,7 +69,7 @@ func TestSignatureBase(t *testing.T) {
 		{
 			Name: "BadMeta-Expires",
 			Params: sigBaseInput{
-				Components: makeComponents(""),
+				Components: makeComponents(),
 				MetadataParams: []Metadata{
 					MetaExpires,
 				},
@@ -79,7 +80,7 @@ func TestSignatureBase(t *testing.T) {
 		{
 			Name: "BadMeta-Nonce",
 			Params: sigBaseInput{
-				Components: makeComponents(""),
+				Components: makeComponents(),
 				MetadataParams: []Metadata{
 					MetaNonce,
 				},
@@ -90,7 +91,7 @@ func TestSignatureBase(t *testing.T) {
 		{
 			Name: "BadMeta-Algorithm",
 			Params: sigBaseInput{
-				Components: makeComponents(""),
+				Components: makeComponents(),
 				MetadataParams: []Metadata{
 					MetaAlgorithm,
 				},
@@ -101,7 +102,7 @@ func TestSignatureBase(t *testing.T) {
 		{
 			Name: "BadMeta-KeyID",
 			Params: sigBaseInput{
-				Components: makeComponents(""),
+				Components: makeComponents(),
 				MetadataParams: []Metadata{
 					MetaKeyID,
 				},
@@ -112,7 +113,7 @@ func TestSignatureBase(t *testing.T) {
 		{
 			Name: "BadMeta-Tag",
 			Params: sigBaseInput{
-				Components: makeComponents(""),
+				Components: makeComponents(),
 				MetadataParams: []Metadata{
 					MetaTag,
 				},
