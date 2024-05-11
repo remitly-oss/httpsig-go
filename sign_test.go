@@ -2,16 +2,13 @@ package httpsig
 
 import (
 	"bufio"
-	"crypto"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/remitly-oss/httpsig-go/keyutil"
+	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
 // testcaseSigBase is a test case for signature bases
@@ -179,7 +176,7 @@ func runTestSigBase(t *testing.T, tc testcaseSigBase) {
 			// Error expected. Ensure its the right kind of error
 			var se *SignatureError
 			if errors.As(err, &se) {
-				Diff(t, tc.ExpectedErr, se.Code, "Unexpected error code")
+				sigtest.Diff(t, tc.ExpectedErr, se.Code, "Unexpected error code")
 				return
 			} else {
 				// Only SignatureError is expected
@@ -193,53 +190,9 @@ func runTestSigBase(t *testing.T, tc testcaseSigBase) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if Diff(t, string(expectedBase), string(actualBase.base), "Signature base did not match") {
+	if sigtest.Diff(t, string(expectedBase), string(actualBase.base), "Signature base did not match") {
 		t.FailNow()
 	}
-}
-
-func readSharedSecret(t *testing.T, sharedSecretFile string) []byte {
-	secretBytes, err := os.ReadFile(fmt.Sprintf("testdata/%s", sharedSecretFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	secret, err := base64.StdEncoding.DecodeString(string(secretBytes))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return secret
-}
-
-func readTestPubkey(t *testing.T, pubkeyFile string) crypto.PublicKey {
-	keybytes, err := os.ReadFile(fmt.Sprintf("testdata/%s", pubkeyFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pubkey, err := keyutil.ReadPublicKey(keybytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pubkey
-}
-
-func readTestPrivateKey(t testing.TB, pkFile string, hint ...string) crypto.PrivateKey {
-	keybytes, err := os.ReadFile(fmt.Sprintf("testdata/%s", pkFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkey, err := keyutil.ReadPrivateKey(keybytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pkey
-}
-
-func Diff(t *testing.T, expected, actual interface{}, msg string, opts ...cmp.Option) bool {
-	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
-		t.Errorf("%s (-want +got):\n%s", msg, diff)
-		return true
-	}
-	return false
 }
 
 type errorMetadataProvider struct{}

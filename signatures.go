@@ -77,7 +77,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			msgHash := sha256.Sum256(base.base)
 			r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
 			if err != nil {
-				return newError(ErrVerification, "Failed to sign with ecdsa private key", err)
+				return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
 			}
 			// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
 			sigBytes = make([]byte, 64)
@@ -91,7 +91,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			msgHash := sha512.Sum384(base.base)
 			r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
 			if err != nil {
-				return newError(ErrVerification, "Failed to sign with ecdsa private key", err)
+				return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
 			}
 			// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
 			sigBytes = make([]byte, 96)
@@ -114,13 +114,13 @@ func sign(hrr httpMessage, sp sigParameters) error {
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		sigBytes = msgHash.Sum(nil)
 	default:
-		return newError(ErrInvalidAlgorithm, fmt.Sprintf("Signing algorithm not supported: '%s'", sp.Algo))
+		return newError(ErrInvalidSignatureOptions, fmt.Sprintf("Signing algorithm not supported: '%s'", sp.Algo))
 	}
 	sigField := sfv.NewDictionary()
 	sigField.Add(sp.Label, sfv.NewItem(sigBytes))
 	signature, err := sfv.Marshal(sigField)
 	if err != nil {
-		return newError(ErrInvalidAlgorithm, fmt.Sprintf("bad marshal - label; %s", sp.Label), err)
+		return newError(ErrInternal, fmt.Sprintf("Failed to marshal signature for label '%s'", sp.Label), err)
 	}
 	hrr.Headers().Set("Signature-Input", fmt.Sprintf("%s=%s", sp.Label, base.signatureInput))
 	hrr.Headers().Set("Signature", signature)

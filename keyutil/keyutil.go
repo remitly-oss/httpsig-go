@@ -81,6 +81,14 @@ func MustReadPrivateKeyFile(pkFile string, override ...Format) crypto.PrivateKey
 	return pk
 }
 
+func MustReadPrivateKey(encodedPrivateKey []byte, override ...Format) crypto.PrivateKey {
+	pkey, err := ReadPrivateKey(encodedPrivateKey, override...)
+	if err != nil {
+		panic(err)
+	}
+	return pkey
+}
+
 // ReadPrivateKeyFile decodes a PEM encoded private key file and parses into a crypto.PrivateKey
 func ReadPrivateKeyFile(pkFile string, override ...Format) (crypto.PrivateKey, error) {
 	keyBytes, err := os.ReadFile(pkFile)

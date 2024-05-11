@@ -1,17 +1,15 @@
 package httpsig_test
 
 import (
-	"bufio"
-	"fmt"
-	"net/http"
-	"os"
 	"testing"
 
 	"github.com/remitly-oss/httpsig-go"
 	"github.com/remitly-oss/httpsig-go/keyman"
 	"github.com/remitly-oss/httpsig-go/keyutil"
+	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
+// TestRoundTrip tests that the signing code can be verified by the verify code.
 func TestRoundTrip(t *testing.T) {
 
 	testcases := []struct {
@@ -65,7 +63,7 @@ func TestRoundTrip(t *testing.T) {
 		{
 			Name: "HMAC_SHA256",
 			Params: httpsig.SigningOptions{
-				Secret:    mustReadFile("testdata/test-shared-secret"),
+				Secret:    sigtest.MustReadFile("testdata/test-shared-secret"),
 				Algorithm: httpsig.Algo_HMAC_SHA256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
@@ -76,7 +74,7 @@ func TestRoundTrip(t *testing.T) {
 				"test-key-shared": {
 					KeyID:  "test-key-shared",
 					Algo:   httpsig.Algo_HMAC_SHA256,
-					Secret: mustReadFile("testdata/test-shared-secret"),
+					Secret: sigtest.MustReadFile("testdata/test-shared-secret"),
 				},
 			}),
 			Profile: httpsig.DefaultVerifyProfile,
@@ -160,7 +158,7 @@ func TestRoundTrip(t *testing.T) {
 				},
 			}),
 			Profile:               httpsig.DefaultVerifyProfile,
-			ExpectedErrCodeVerify: httpsig.ErrInvalidDigest,
+			ExpectedErrCodeVerify: httpsig.ErrNoSigWrongDigest,
 		},
 	}
 
@@ -171,7 +169,7 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			req := readRequest(t, tc.RequestFile)
+			req := sigtest.ReadRequest(t, tc.RequestFile)
 			err = signer.Sign(req)
 			if err != nil {
 				t.Fatalf("%#v", err)
@@ -186,7 +184,7 @@ func TestRoundTrip(t *testing.T) {
 			if err != nil {
 				if tc.ExpectedErrCodeVerify != "" {
 					if sigerr, ok := err.(*httpsig.SignatureError); ok {
-						httpsig.Diff(t, tc.ExpectedErrCodeVerify, sigerr.Code, "Wrong err code")
+						sigtest.Diff(t, tc.ExpectedErrCodeVerify, sigerr.Code, "Wrong err code")
 					}
 				} else {
 					t.Fatalf("%#v", err)
@@ -198,25 +196,4 @@ func TestRoundTrip(t *testing.T) {
 		})
 
 	}
-}
-
-func readRequest(t testing.TB, reqFile string) *http.Request {
-	reqtxt, err := os.Open(fmt.Sprintf("testdata/%s", reqFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req, err := http.ReadRequest(bufio.NewReader(reqtxt))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return req
-}
-
-func mustReadFile(file string) []byte {
-	data, err := os.ReadFile(file)
-	if err != nil {
-		panic(err)
-	}
-	return data
 }

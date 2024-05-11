@@ -11,11 +11,24 @@ import (
 	sfv "github.com/dunglas/httpsfv"
 )
 
-var emptySHA256 = sha256.Sum256([]byte{})
-var emptySHA512 = sha512.Sum512([]byte{})
+const (
+	digestAlgoSHA256 = "sha-256"
+	digestAlgoSHA512 = "sha-512"
+)
+
+var (
+	emptySHA256 = sha256.Sum256([]byte{})
+	emptySHA512 = sha512.Sum512([]byte{})
+)
 
 // digestBody reads the entire body to calculate the digest and returns a new io.ReaderCloser which can be set as the new request body.
-func digestBody(digAlgo Digest, body io.ReadCloser) (digest []byte, newBody io.ReadCloser, err error) {
+type digestInfo struct {
+	Digest  []byte
+	NewBody io.ReadCloser // NewBody is intended as the http.Request Body replacement. Calculating the digest requires reading the body.
+}
+
+func digestBody(digAlgo Digest, body io.ReadCloser) (digestInfo, error) {
+	var digest []byte
 	// client GET requests have a nil body
 	// received/server GET requests have a body but its NoBody
 	if body == nil || body == http.NoBody {
@@ -25,16 +38,19 @@ func digestBody(digAlgo Digest, body io.ReadCloser) (digest []byte, newBody io.R
 		case DigestSHA512:
 			digest = emptySHA512[:]
 		default:
-			return nil, body, newError(ErrInvalidDigestAlgorithm, fmt.Sprintf("Unsupported digest algorithm '%s'", digAlgo))
+			return digestInfo{}, newError(ErrNoSigUnsupportedDigest, fmt.Sprintf("Unsupported digest algorithm '%s'", digAlgo))
 		}
-		return digest, body, err
+		return digestInfo{
+			Digest:  digest,
+			NewBody: body,
+		}, nil
 	}
 	var buf bytes.Buffer
 	if _, err := buf.ReadFrom(body); err != nil {
-		return nil, body, newError(ErrInvalidDigest, "Failed to read message body to calculate digest", err)
+		return digestInfo{}, newError(ErrNoSigMessageBody, "Failed to read message body to calculate digest", err)
 	}
 	if err := body.Close(); err != nil {
-		return nil, body, newError(ErrInvalidDigest, "Failed to close message body to calculate digest", err)
+		return digestInfo{}, newError(ErrNoSigMessageBody, "Failed to close message body to calculate digest", err)
 	}
 
 	switch digAlgo {
@@ -45,10 +61,13 @@ func digestBody(digAlgo Digest, body io.ReadCloser) (digest []byte, newBody io.R
 		d := sha512.Sum512(buf.Bytes())
 		digest = d[:]
 	default:
-		return nil, body, newError(ErrInvalidDigestAlgorithm, fmt.Sprintf("Unsupported digest algorithm '%s'", digAlgo))
+		return digestInfo{}, newError(ErrNoSigUnsupportedDigest, fmt.Sprintf("Unsupported digest algorithm '%s'", digAlgo))
 	}
 
-	return digest, io.NopCloser(bytes.NewReader(buf.Bytes())), err
+	return digestInfo{
+		Digest:  digest,
+		NewBody: io.NopCloser(bytes.NewReader(buf.Bytes())),
+	}, nil
 }
 
 func createDigestHeader(algo Digest, digest []byte) (string, error) {
@@ -56,15 +75,15 @@ func createDigestHeader(algo Digest, digest []byte) (string, error) {
 	header := sfv.NewDictionary()
 	switch algo {
 	case DigestSHA256:
-		header.Add("sha-256", sfValue)
+		header.Add(digestAlgoSHA256, sfValue)
 	case DigestSHA512:
-		header.Add("sha-512", sfValue)
+		header.Add(digestAlgoSHA512, sfValue)
 	default:
-		return "", newError(ErrInvalidDigestAlgorithm, fmt.Sprintf("Unsupported digest algorithm '%s'", algo))
+		return "", newError(ErrNoSigUnsupportedDigest, fmt.Sprintf("Unsupported digest algorithm '%s'", algo))
 	}
 	value, err := sfv.Marshal(header)
 	if err != nil {
-		return "", newError(ErrInvalidDigest, "Failed to marshal digest", err)
+		return "", newError(ErrInternal, "Failed to marshal digest", err)
 	}
 	return value, nil
 
@@ -74,7 +93,7 @@ func createDigestHeader(algo Digest, digest []byte) (string, error) {
 func getSupportedDigestFromHeader(contentDigestHeader []string) (algo Digest, digest []byte, err error) {
 	digestDict, err := sfv.UnmarshalDictionary(contentDigestHeader)
 	if err != nil {
-		return "", nil, newError(ErrInvalidHeader, "Could not parse Content-Digest header", err)
+		return "", nil, newError(ErrNoSigInvalidHeader, "Could not parse Content-Digest header", err)
 	}
 
 	for _, algo := range digestDict.Names() {
