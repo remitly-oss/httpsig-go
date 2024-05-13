@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"testing"
+
+	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
 // FuzzSigningOptions fuzzes the basic user input to SigningOptions
@@ -43,7 +45,7 @@ func FuzzSigningOptions1(f *testing.F) {
 			},
 		})
 		so := SigningOptions{
-			PrivateKey: readTestPrivateKey(t, "test-key-ed25519.key"),
+			PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
 			Algorithm:  Algo_ED25519,
 			Fields:     Fields(label, keyID, tag),
 			Metadata:   []Metadata{MetaKeyID, MetaTag},
@@ -111,7 +113,7 @@ func FuzzSigningOptionsFields(f *testing.F) {
 			})
 		}
 		so := SigningOptions{
-			PrivateKey: readTestPrivateKey(t, "test-key-ed25519.key"),
+			PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
 			Algorithm:  Algo_ED25519,
 			Fields:     fields,
 		}
@@ -182,7 +184,7 @@ func FuzzMetadata(f *testing.F) {
 		t.Logf("tag: %s\n", tag)
 
 		so := SigningOptions{
-			PrivateKey: readTestPrivateKey(t, "test-key-ed25519.key"),
+			PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
 			Algorithm:  Algo_ED25519,
 			Fields:     Fields(),
 			Metadata:   []Metadata{MetaCreated, MetaExpires, MetaNonce, MetaAlgorithm, MetaKeyID, MetaTag},

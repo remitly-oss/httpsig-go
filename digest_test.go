@@ -1,11 +1,12 @@
 package httpsig
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"io"
 	"testing"
+
+	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
 func TestDigestCreate(t *testing.T) {
@@ -20,28 +21,28 @@ func TestDigestCreate(t *testing.T) {
 		{
 			Name:           "sha-256",
 			Algo:           DigestSHA256,
-			Body:           makeBody("hello world"),
+			Body:           sigtest.MakeBody("hello world"),
 			ExpectedDigest: "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=",
 			ExpectedHeader: "sha-256=:uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=:",
 		},
 		{
 			Name:           "sha-512",
 			Algo:           DigestSHA512,
-			Body:           makeBody("hello world"),
+			Body:           sigtest.MakeBody("hello world"),
 			ExpectedDigest: "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw==",
 			ExpectedHeader: "sha-512=:MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw==:",
 		},
 		{
 			Name:            "UnsupportedAlgorithm",
 			Algo:            Digest("nope"),
-			Body:            makeBody("hello world"),
-			ExpectedErrCode: ErrInvalidDigestAlgorithm,
+			Body:            sigtest.MakeBody("hello world"),
+			ExpectedErrCode: ErrNoSigUnsupportedDigest,
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(t *testing.T) {
-			actual, _, err := digestBody(tc.Algo, tc.Body)
+			actual, err := digestBody(tc.Algo, tc.Body)
 			if err != nil {
 				if tc.ExpectedErrCode != "" {
 					diffErrorCode(t, err, tc.ExpectedErrCode)
@@ -49,14 +50,14 @@ func TestDigestCreate(t *testing.T) {
 				}
 				t.Fatal(err)
 			}
-			actualEncoded := base64.StdEncoding.EncodeToString(actual)
-			Diff(t, tc.ExpectedDigest, actualEncoded, "Wrong digest")
+			actualEncoded := base64.StdEncoding.EncodeToString(actual.Digest)
+			sigtest.Diff(t, tc.ExpectedDigest, actualEncoded, "Wrong digest")
 
-			actualHeader, err := createDigestHeader(tc.Algo, actual)
+			actualHeader, err := createDigestHeader(tc.Algo, actual.Digest)
 			if err != nil {
 				t.Fatal(err)
 			}
-			Diff(t, tc.ExpectedHeader, actualHeader, "Wrong digest header")
+			sigtest.Diff(t, tc.ExpectedHeader, actualHeader, "Wrong digest header")
 		})
 	}
 }
@@ -89,7 +90,7 @@ func TestDigestParse(t *testing.T) {
 		{
 			Name:            "BadHeader",
 			Header:          []string{"bl===ah"},
-			ExpectedErrCode: ErrInvalidHeader,
+			ExpectedErrCode: ErrNoSigInvalidHeader,
 		},
 		{
 			Name:           "Unsupported",
@@ -111,20 +112,16 @@ func TestDigestParse(t *testing.T) {
 				t.Fatal("Expected an err")
 			}
 			digestEncoded := base64.StdEncoding.EncodeToString(actualDigest)
-			Diff(t, tc.ExcepctedAlgo, actualAlgo, "Wrong digest algo")
-			Diff(t, tc.ExpectedDigest, digestEncoded, "Wrong digest")
+			sigtest.Diff(t, tc.ExcepctedAlgo, actualAlgo, "Wrong digest algo")
+			sigtest.Diff(t, tc.ExpectedDigest, digestEncoded, "Wrong digest")
 		})
 	}
-}
-
-func makeBody(body string) io.ReadCloser {
-	return io.NopCloser(bytes.NewReader([]byte(body)))
 }
 
 func diffErrorCode(t *testing.T, err error, code ErrCode) bool {
 	var sigerr *SignatureError
 	if errors.As(err, &sigerr) {
-		return Diff(t, code, sigerr.Code, "Wrong error code")
+		return sigtest.Diff(t, code, sigerr.Code, "Wrong error code")
 	}
 	return false
 }

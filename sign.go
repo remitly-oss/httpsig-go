@@ -23,9 +23,6 @@ type CreatedScheme int
 type ExpiresScheme int
 type NonceScheme int
 
-// ErrCode enumerates the reasons a signing or verification can fail
-type ErrCode string
-
 const (
 	// Supported signing algorithms
 	Algo_RSA_PSS_SHA512    Algorithm = "rsa-pss-sha512"
@@ -52,21 +49,6 @@ const (
 
 	// Nonce schemes
 	NonceRandom32 = iota // 32 bit random nonce. Base64 encoded
-
-	// Error Codes
-	ErrInvalidSignatureOptions ErrCode = "invalid_signature_options"
-	ErrInvalidComponent        ErrCode = "invalid_component"
-	ErrInvalidSignature        ErrCode = "invalid_signature"
-	ErrInvalidAlgorithm        ErrCode = "invalid_algorithm"
-	ErrInvalidMetadata         ErrCode = "invalid_metadata"
-	ErrInvalidPublicKey        ErrCode = "invalid_public_key"
-	ErrInvalidDigest           ErrCode = "invalid_digest"
-	ErrInvalidDigestAlgorithm  ErrCode = "invalid_digest_algorithm"
-	ErrInvalidHeader           ErrCode = "invalid_header"
-	ErrMissingSignature        ErrCode = "missing_signature"
-	ErrVerification            ErrCode = "verification" // The signature did not verify according to the algorithm.
-	ErrKeyFetch                ErrCode = "key_fetch"    // An error looking up the key for a signature
-	ErrUnsupported             ErrCode = "unsupported"  // A particular feature of the spec is not supported
 )
 
 type SigningOptions struct {
@@ -95,40 +77,6 @@ type MetadataProvider interface {
 	Alg() (string, error)
 	KeyID() (string, error)
 	Tag() (string, error)
-}
-
-type SignatureError struct {
-	Cause   error // may be nil
-	Code    ErrCode
-	Message string
-}
-
-func (se *SignatureError) Error() string {
-	return se.Message
-}
-
-func (se *SignatureError) Unwrap() error {
-	return se.Cause
-}
-
-func (se *SignatureError) GoString() string {
-	cause := ""
-	if se.Cause != nil {
-		cause = fmt.Sprintf("Cause: %s\n", se.Cause)
-	}
-	return fmt.Sprintf("Code: %s\nMessage: %s\n%s", se.Code, se.Message, cause)
-}
-
-func newError(code ErrCode, msg string, cause ...error) *SignatureError {
-	var rootErr error
-	if len(cause) > 0 {
-		rootErr = cause[0]
-	}
-	return &SignatureError{
-		Cause:   rootErr,
-		Code:    code,
-		Message: msg,
-	}
 }
 
 func (so SigningOptions) Created() (int, error) {
@@ -223,12 +171,12 @@ func NewSigner(params SigningOptions, mdp ...MetadataProvider) (*Signer, error) 
 func (s *Signer) Sign(req *http.Request) error {
 	// Add the content-digest if covered by the signature and not already present
 	if signedFields(s.options.Fields).includes("content-digest") && req.Header.Get("Content-Digest") == "" {
-		digest, newBody, err := digestBody(s.options.Digest, req.Body)
+		di, err := digestBody(s.options.Digest, req.Body)
 		if err != nil {
 			return err
 		}
-		req.Body = newBody
-		digestValue, err := createDigestHeader(s.options.Digest, digest)
+		req.Body = di.NewBody
+		digestValue, err := createDigestHeader(s.options.Digest, di.Digest)
 		if err != nil {
 			return err
 		}

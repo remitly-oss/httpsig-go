@@ -191,7 +191,7 @@ func deriveComponentValueRequest(req *http.Request, component componentID) (stri
 	case "@method":
 		return req.Method, nil
 	case "@target-uri":
-		return req.RequestURI, nil
+		return deriveTargetURI(req), nil
 	case "@authority":
 		return req.Host, nil
 	case "@scheme":
@@ -219,4 +219,17 @@ func deriveComponentValueRequest(req *http.Request, component componentID) (stri
 		return "", newError(ErrInvalidSignatureOptions, fmt.Sprintf("Unsupported derived component identifier for a request '%s'", component.Name))
 	}
 	return "", nil
+}
+
+// deriveTargetURI resolves to an absolute form as required by RFC 9110 and referenced by the http signatures spec.
+// The target URI excludes the reference's fragment component, if any, since fragment identifiers are reserved for client-side processing
+func deriveTargetURI(req *http.Request) string {
+	if req.URL.IsAbs() {
+		return req.RequestURI
+	}
+	scheme := "https"
+	if req.TLS == nil {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s%s%s", scheme, req.Host, req.URL.RawPath, req.URL.RawQuery)
 }

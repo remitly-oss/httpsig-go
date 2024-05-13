@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"testing"
+
+	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
 /*
@@ -26,7 +28,7 @@ func TestSpecVerify(t *testing.T) {
 			Key: KeySpec{
 				KeyID:  "test-key-rsa-pss",
 				Algo:   Algo_RSA_PSS_SHA512,
-				PubKey: readTestPubkey(t, "test-key-rsa-pss.pub"),
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-rsa-pss.pub"),
 			},
 			SignedRequestOrResonseFile: "b21_request_signed.txt",
 		},
@@ -35,7 +37,7 @@ func TestSpecVerify(t *testing.T) {
 			Key: KeySpec{
 				KeyID:  "test-key-rsa-pss",
 				Algo:   Algo_RSA_PSS_SHA512,
-				PubKey: readTestPubkey(t, "test-key-rsa-pss.pub"),
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-rsa-pss.pub"),
 			},
 			SignedRequestOrResonseFile: "b22_request_signed.txt",
 		},
@@ -44,7 +46,7 @@ func TestSpecVerify(t *testing.T) {
 			Key: KeySpec{
 				KeyID:  "test-key-rsa-pss",
 				Algo:   Algo_RSA_PSS_SHA512,
-				PubKey: readTestPubkey(t, "test-key-rsa-pss.pub"),
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-rsa-pss.pub"),
 			},
 			SignedRequestOrResonseFile: "b23_request_signed.txt",
 		},
@@ -54,7 +56,7 @@ func TestSpecVerify(t *testing.T) {
 			Key: KeySpec{
 				KeyID:  "test-key-ecc-p256",
 				Algo:   Algo_ECDSA_P256_SHA256,
-				PubKey: readTestPubkey(t, "test-key-ecc-p256.pub"),
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-ecc-p256.pub"),
 			},
 			SignedRequestOrResonseFile: "b24_response_signed.txt",
 		},
@@ -63,7 +65,7 @@ func TestSpecVerify(t *testing.T) {
 			Key: KeySpec{
 				KeyID:  "test-shared-secret",
 				Algo:   Algo_HMAC_SHA256,
-				Secret: readSharedSecret(t, "test-shared-secret"),
+				Secret: sigtest.ReadSharedSecret(t, "test-shared-secret"),
 			},
 			SignedRequestOrResonseFile: "b25_request_signed.txt",
 		},
@@ -72,7 +74,7 @@ func TestSpecVerify(t *testing.T) {
 			Key: KeySpec{
 				KeyID:  "test-key-ed25519",
 				Algo:   Algo_ED25519,
-				PubKey: readTestPubkey(t, "test-key-ed25519.pub"),
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-ed25519.pub"),
 			},
 			SignedRequestOrResonseFile: "b26_request_signed.txt",
 		},
@@ -317,7 +319,7 @@ func TestSpecRecreateSignature(t *testing.T) {
 				},
 				Algo:   Algo_HMAC_SHA256,
 				Label:  "sig-b25",
-				Secret: readSharedSecret(t, "test-shared-secret"),
+				Secret: sigtest.ReadSharedSecret(t, "test-shared-secret"),
 			},
 
 			ExpectedFile: "b25_request_signed.txt",
@@ -341,7 +343,7 @@ func TestSpecRecreateSignature(t *testing.T) {
 
 				Algo:       Algo_ED25519,
 				Label:      "sig-b26",
-				PrivateKey: readTestPrivateKey(t, "test-key-ed25519.key"),
+				PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
 			},
 			ExpectedFile: "b26_request_signed.txt",
 		},
@@ -374,7 +376,7 @@ func TestSpecRecreateSignature(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			Diff(t, expected.Header, req.Header, "")
+			sigtest.Diff(t, expected.Header, req.Header, "")
 		})
 	}
 }
