@@ -23,7 +23,7 @@ func TestRoundTrip(t *testing.T) {
 		{
 			Name: "RSA-PSS",
 			Params: httpsig.SigningOptions{
-				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-rsa-pss.key", keyutil.PKCS8_RSAPSS),
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-rsa-pss.key"),
 				Algorithm:  httpsig.Algo_RSA_PSS_SHA512,
 				Fields:     httpsig.DefaultRequiredFields,
 				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
@@ -82,7 +82,7 @@ func TestRoundTrip(t *testing.T) {
 		{
 			Name: "ECDSA-p265",
 			Params: httpsig.SigningOptions{
-				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key", keyutil.ECC),
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key"),
 				Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
 				Fields:     httpsig.DefaultRequiredFields,
 				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
@@ -102,7 +102,7 @@ func TestRoundTrip(t *testing.T) {
 		{
 			Name: "ECDSA-p384",
 			Params: httpsig.SigningOptions{
-				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p384.key", keyutil.ECC),
+				PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p384.key"),
 				Algorithm:  httpsig.Algo_ECDSA_P384_SHA384,
 				Fields:     httpsig.DefaultRequiredFields,
 				Metadata:   []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
