@@ -10,25 +10,13 @@ import (
 	"os"
 )
 
-// Private or public key schema
-type Format string
-
-const (
-	// Hints for reading key
-	PKCS1        Format = "pkcs1"
-	PKCS8        Format = "pkcs8"
-	PKCS8_RSAPSS Format = "pkcs8_rsapss" // Go doesn't support
-	PKIX         Format = "pxix"
-	ECC          Format = "ecc"
-)
-
 var (
 	oidPublicKeyRSAPSS = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 10}
 )
 
 // MustReadPublicKeyFile reads a PEM encoded public key file or panics
-func MustReadPublicKeyFile(pubkeyFile string, override ...Format) crypto.PublicKey {
-	pk, err := ReadPublicKeyFile(pubkeyFile, override...)
+func MustReadPublicKeyFile(pubkeyFile string) crypto.PublicKey {
+	pk, err := ReadPublicKeyFile(pubkeyFile)
 	if err != nil {
 		panic(err)
 	}
@@ -36,16 +24,16 @@ func MustReadPublicKeyFile(pubkeyFile string, override ...Format) crypto.PublicK
 }
 
 // ReadPublicKeyFile reads a PEM encdoded public key file and parses into crypto.PublicKey
-func ReadPublicKeyFile(pubkeyFile string, override ...Format) (crypto.PublicKey, error) {
+func ReadPublicKeyFile(pubkeyFile string) (crypto.PublicKey, error) {
 	keyBytes, err := os.ReadFile(pubkeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read public key file '%s': %w", pubkeyFile, err)
 	}
-	return ReadPublicKey(keyBytes, override...)
+	return ReadPublicKey(keyBytes)
 }
 
 // ReadPublicKey decodes a PEM encoded public key and parses into crypto.PublicKey
-func ReadPublicKey(encodedPubkey []byte, override ...Format) (crypto.PublicKey, error) {
+func ReadPublicKey(encodedPubkey []byte) (crypto.PublicKey, error) {
 	block, _ := pem.Decode(encodedPubkey)
 	if block == nil {
 		return nil, fmt.Errorf("Failed to PEM decode public key")
@@ -53,52 +41,49 @@ func ReadPublicKey(encodedPubkey []byte, override ...Format) (crypto.PublicKey, 
 	var key crypto.PublicKey
 	var err error
 
-	format := PKIX
-	if len(override) > 0 {
-		format = override[0]
-	}
-	switch format {
-	case PKIX:
+	switch block.Type {
+	case "PUBLIC KEY":
 		key, err = x509.ParsePKIXPublicKey(block.Bytes)
-	case PKCS1:
+	case "RSA PUBLIC KEY":
 		key, err = x509.ParsePKCS1PublicKey(block.Bytes)
 	default:
-		return nil, fmt.Errorf("Unsupported pubkey format '%s'", format)
+		return nil, fmt.Errorf("Unsupported pubkey format '%s'", block.Type)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse public key with format '%s': %w", format, err)
+		return nil, fmt.Errorf("Failed to parse public key with format '%s': %w", block.Type, err)
 	}
 
 	return key, nil
 }
 
 // MustReadPrivateKeyFile decodes a PEM encoded private key file and parses into a crypto.PrivateKey or panics.
-func MustReadPrivateKeyFile(pkFile string, override ...Format) crypto.PrivateKey {
-	pk, err := ReadPrivateKeyFile(pkFile, override...)
+func MustReadPrivateKeyFile(pkFile string) crypto.PrivateKey {
+	pk, err := ReadPrivateKeyFile(pkFile)
 	if err != nil {
 		panic(err)
 	}
 	return pk
 }
 
-func MustReadPrivateKey(encodedPrivateKey []byte, override ...Format) crypto.PrivateKey {
-	pkey, err := ReadPrivateKey(encodedPrivateKey, override...)
+func MustReadPrivateKey(encodedPrivateKey []byte) crypto.PrivateKey {
+	pkey, err := ReadPrivateKey(encodedPrivateKey)
 	if err != nil {
 		panic(err)
 	}
 	return pkey
 }
 
-// ReadPrivateKeyFile decodes a PEM encoded private key file and parses into a crypto.PrivateKey
-func ReadPrivateKeyFile(pkFile string, override ...Format) (crypto.PrivateKey, error) {
+// ReadPrivateKeyFile opens the given file and calls ReadPrivateKey to return a crypto.PrivateKey
+func ReadPrivateKeyFile(pkFile string) (crypto.PrivateKey, error) {
 	keyBytes, err := os.ReadFile(pkFile)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read private key file '%s': %w", pkFile, err)
 	}
-	return ReadPrivateKey(keyBytes, override...)
+	return ReadPrivateKey(keyBytes)
 }
 
-func ReadPrivateKey(encodedPrivateKey []byte, override ...Format) (crypto.PrivateKey, error) {
+// ReadPrivateKey decoded a PEM encoded private key and parses into a crypto.PrivateKey.
+func ReadPrivateKey(encodedPrivateKey []byte) (crypto.PrivateKey, error) {
 	block, _ := pem.Decode(encodedPrivateKey)
 
 	if block == nil {
@@ -108,12 +93,8 @@ func ReadPrivateKey(encodedPrivateKey []byte, override ...Format) (crypto.Privat
 	var key crypto.PrivateKey
 	var err error
 
-	format := PKCS8 // PCKS8 handles all support algorithms. However older keys may be encoded in another format.
-	if len(override) > 0 {
-		format = override[0]
-	}
-	switch format {
-	case PKCS8, PKCS8_RSAPSS:
+	switch block.Type {
+	case "PRIVATE KEY":
 		key, err = x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
 			// Try to handle RSAPSS
@@ -124,15 +105,15 @@ func ReadPrivateKey(encodedPrivateKey []byte, override ...Format) (crypto.Privat
 				err = psserr
 			}
 		}
-	case PKCS1:
-		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-	case ECC:
+	case "EC PRIVATE KEY":
 		key, err = x509.ParseECPrivateKey(block.Bytes)
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 	default:
-		return nil, fmt.Errorf("Unsupported private key format '%s'", format)
+		return nil, fmt.Errorf("Unsupported private key format '%s'", block.Type)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse private key with format '%s': %w", format, err)
+		return nil, fmt.Errorf("Failed to parse private key with format '%s': %w", block.Type, err)
 	}
 	return key, nil
 }
