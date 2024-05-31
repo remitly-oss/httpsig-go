@@ -2,7 +2,6 @@ package httpsig
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -164,25 +163,11 @@ func runTestSigBase(t *testing.T, tc testcaseSigBase) {
 	}
 
 	actualBase, err := calculateSignatureBase(hrr, tc.Params)
-	if err == nil && tc.ExpectedErr != "" {
-		t.Fatalf("Expected: error code '%s'. Got no error", tc.ExpectedErr)
-	}
-
-	if err != nil {
-		if tc.ExpectedErr == "" {
-			// The error was not expected
-			t.Fatal(err)
-		} else {
-			// Error expected. Ensure its the right kind of error
-			var se *SignatureError
-			if errors.As(err, &se) {
-				sigtest.Diff(t, tc.ExpectedErr, se.Code, "Unexpected error code")
-				return
-			} else {
-				// Only SignatureError is expected
-				t.Fatal(err)
-			}
-		}
+	if sigtest.Diff(t, tc.ExpectedErr, errCode(err), "Wrong error code") {
+		return
+	} else if tc.ExpectedErr != "" {
+		// If an error is expected and the err Diff check has passed then don't continue on to test the result
+		return
 	}
 
 	t.Log(string(actualBase.base))
