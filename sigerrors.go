@@ -1,6 +1,9 @@
 package httpsig
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // ErrCode enumerates the reasons a signing or verification can fail
 type ErrCode string
@@ -30,6 +33,11 @@ const (
 	ErrInvalidComponent        ErrCode = "invalid_component"
 	ErrInvalidMetadata         ErrCode = "invalid_metadata"
 
+	// Accept Signature
+	ErrInvalidAcceptSignature ErrCode = "invalid_accept_signature"
+	ErrMissingAcceptSignature ErrCode = "missing_accept_signature" // The Accept-Signature field was present but had an empty value.
+
+	// General
 	ErrInternal    ErrCode = "internal_error"
 	ErrUnsupported ErrCode = "unsupported" // A particular feature of the spec is not supported
 )
@@ -66,4 +74,16 @@ func newError(code ErrCode, msg string, cause ...error) *SignatureError {
 		Code:    code,
 		Message: msg,
 	}
+}
+
+func errCode(err error) (ec ErrCode) {
+	if err == nil {
+		return ""
+	}
+	var se *SignatureError
+	if errors.As(err, &se) {
+		return se.Code
+	}
+
+	return ""
 }
