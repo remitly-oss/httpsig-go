@@ -2,6 +2,7 @@ package httpsig
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -52,9 +53,9 @@ type KeyError struct {
 
 type KeyFetcher interface {
 	// FetchByKeyID looks up a KeySpec from the 'keyid' metadata parameter on the signature.
-	FetchByKeyID(keyID string) (KeySpec, error)
+	FetchByKeyID(ctx context.Context, keyID string) (KeySpec, error)
 	// Fetch looks up a KeySpec when the is not a keyid in the signature.
-	Fetch(rh http.Header, md MetadataProvider) (KeySpec, error)
+	Fetch(ctx context.Context, rh http.Header, md MetadataProvider) (KeySpec, error)
 }
 
 // VerifyProfile sets the parameters for a fully valid request or response.
@@ -371,12 +372,12 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) erro
 		if err != nil {
 			return newError(ErrSigKeyFetch, "Could not get keyid from signature metadata", err)
 		}
-		ks, err = ver.keys.FetchByKeyID(keyid)
+		ks, err = ver.keys.FetchByKeyID(r.Context(), keyid)
 		if err != nil {
 			return newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
 		}
 	} else {
-		ks, err = ver.keys.Fetch(r.Headers(), sig.Input.MetadataValues)
+		ks, err = ver.keys.Fetch(r.Context(), r.Headers(), sig.Input.MetadataValues)
 		if err != nil {
 			return newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
 		}

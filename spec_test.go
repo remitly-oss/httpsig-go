@@ -2,6 +2,7 @@ package httpsig
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -280,7 +281,7 @@ type fixedKeyFetch struct {
 	key           KeySpec
 }
 
-func (kf fixedKeyFetch) FetchByKeyID(keyID string) (KeySpec, error) {
+func (kf fixedKeyFetch) FetchByKeyID(ctx context.Context, keyID string) (KeySpec, error) {
 	if kf.requiredKeyID != "" && keyID != kf.requiredKeyID {
 		return KeySpec{}, &KeyError{
 			error: fmt.Errorf("Invalid key id. Wanted '%s' got '%s'", kf.requiredKeyID, keyID),
@@ -289,7 +290,7 @@ func (kf fixedKeyFetch) FetchByKeyID(keyID string) (KeySpec, error) {
 	return kf.key, nil
 }
 
-func (kf fixedKeyFetch) Fetch(rh http.Header, md MetadataProvider) (KeySpec, error) {
+func (kf fixedKeyFetch) Fetch(ctx context.Context, rh http.Header, md MetadataProvider) (KeySpec, error) {
 	return KeySpec{}, fmt.Errorf("Fetch without a key id not supported.")
 }
 

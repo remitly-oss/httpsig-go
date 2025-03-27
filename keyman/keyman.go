@@ -2,6 +2,7 @@
 package keyman
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -14,10 +15,13 @@ type KeyFetchInMemory struct {
 }
 
 func NewKeyFetchInMemory(pubkeys map[string]httpsig.KeySpec) *KeyFetchInMemory {
+	if pubkeys == nil {
+		pubkeys = map[string]httpsig.KeySpec{}
+	}
 	return &KeyFetchInMemory{pubkeys}
 }
 
-func (kf *KeyFetchInMemory) FetchByKeyID(keyID string) (httpsig.KeySpec, error) {
+func (kf *KeyFetchInMemory) FetchByKeyID(ctx context.Context, keyID string) (httpsig.KeySpec, error) {
 	ks, found := kf.pubkeys[keyID]
 	if !found {
 		return httpsig.KeySpec{}, fmt.Errorf("Key for keyid '%s' not found", keyID)
@@ -25,6 +29,6 @@ func (kf *KeyFetchInMemory) FetchByKeyID(keyID string) (httpsig.KeySpec, error) 
 	return ks, nil
 }
 
-func (kf *KeyFetchInMemory) Fetch(http.Header, httpsig.MetadataProvider) (httpsig.KeySpec, error) {
+func (kf *KeyFetchInMemory) Fetch(context.Context, http.Header, httpsig.MetadataProvider) (httpsig.KeySpec, error) {
 	return httpsig.KeySpec{}, fmt.Errorf("Fetch without keyid not supported")
 }
