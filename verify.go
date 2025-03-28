@@ -36,6 +36,7 @@ var (
 	DefaultRequiredFields = Fields("content-digest", "@method", "@target-uri")
 )
 
+// KeySpec is the per-key information needed to verify a signature.
 type KeySpec struct {
 	KeyID  string
 	Algo   Algorithm
@@ -43,8 +44,17 @@ type KeySpec struct {
 	Secret []byte // shared secret for symmetric algorithms
 }
 
-type KeyErrorReason string
+// KeySpec implements KeySpecer
+func (ks KeySpec) KeySpec() (KeySpec, error) {
+	return ks, nil
+}
 
+// KeySpecer should be implemented by your key/credential store
+type KeySpecer interface {
+	KeySpec() (KeySpec, error)
+}
+
+type KeyErrorReason string
 type KeyError struct {
 	error
 	Reason  KeyErrorReason
@@ -53,9 +63,9 @@ type KeyError struct {
 
 type KeyFetcher interface {
 	// FetchByKeyID looks up a KeySpec from the 'keyid' metadata parameter on the signature.
-	FetchByKeyID(ctx context.Context, keyID string) (KeySpec, error)
-	// Fetch looks up a KeySpec when the is not a keyid in the signature.
-	Fetch(ctx context.Context, rh http.Header, md MetadataProvider) (KeySpec, error)
+	FetchByKeyID(ctx context.Context, rh http.Header, keyID string) (KeySpecer, error)
+	// Fetch looks up a KeySpec when the keyid is not in the signature.
+	Fetch(ctx context.Context, rh http.Header, md MetadataProvider) (KeySpecer, error)
 }
 
 // VerifyProfile sets the parameters for a fully valid request or response.
@@ -79,8 +89,9 @@ type VerifyProfile struct {
 }
 
 type VerifiedSignature struct {
-	Label    string // Label should not be used for the identity of the caller. Use keyid or tag instead. Label can be set by an attacker.
-	Metadata MetadataProvider
+	KeySpec KeySpecer
+	Label   string // Label should not be used for the identity of the caller. Use keyid or tag instead. Label can be set by an attacker.
+	MetadataProvider
 }
 
 type VerifyResult struct {
@@ -89,6 +100,11 @@ type VerifyResult struct {
 	// InvalidSignatures is a map of label to InvalidSignature.
 	// It is provided to allow introspection of attempted verifications.
 	InvalidSignatures map[string]InvalidSignature
+}
+
+// Verified returns true if any signatures verified
+func (vr *VerifyResult) Verified() bool {
+	return len(vr.Signatures) > 0
 }
 
 // Signature is for messages with single signatures.
@@ -100,27 +116,22 @@ func (vr *VerifyResult) Signature() VerifiedSignature {
 	return VerifiedSignature{}
 }
 
+func (vr *VerifyResult) InvalidSignature() InvalidSignature {
+	for _, val := range vr.InvalidSignatures {
+		return val
+	}
+	return InvalidSignature{}
+}
+
 type InvalidSignature struct {
+	// Metadata is only present if the signature parsed
+	MetadataProvider
+	// HasMetadata is true if the signature parsed successfully.
+	HasMetadata bool
+
 	Label string // Signature label
 	Raw   string // Raw string value of the signature
 	Error SignatureError
-	// HasMetadata is true if the signature parsed successfully.
-	HasMetadata bool
-	// Metadata is only present if the signature parsed
-	metadata MetadataProvider
-}
-
-func NewInvalidSignature(md MetadataProvider) InvalidSignature {
-	return InvalidSignature{
-		metadata: md,
-	}
-}
-
-func (is InvalidSignature) Metadata() (mp MetadataProvider, found bool) {
-	if !is.HasMetadata {
-		return nil, false
-	}
-	return is.metadata, true
 }
 
 func (vr *VerifyResult) NumSignatures() int {
@@ -209,13 +220,14 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 	/* verify signatures */
 	var lasterr error
 	for _, sig := range sigs.sigs {
-		if vererr := ver.verifySignature(hrr, sig); vererr != nil {
+		keyspec, vererr := ver.verifySignature(hrr, sig)
+		if vererr != nil {
 			vres.InvalidSignatures[sig.Label] = InvalidSignature{
-				Label:       sig.Label,
-				Raw:         "",
-				Error:       toSigError(vererr),
-				HasMetadata: true,
-				metadata:    sig.Input.MetadataValues,
+				Label:            sig.Label,
+				Raw:              "",
+				Error:            toSigError(vererr),
+				HasMetadata:      true,
+				MetadataProvider: sig.Input.MetadataValues,
 			}
 			lasterr = vererr
 			continue
@@ -224,18 +236,19 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 		/* validate against profile */
 		if valerr := ver.profile.validate(sig); valerr != nil {
 			vres.InvalidSignatures[sig.Label] = InvalidSignature{
-				Label:       sig.Label,
-				Raw:         "",
-				Error:       toSigError(valerr),
-				HasMetadata: true,
-				metadata:    sig.Input.MetadataValues,
+				Label:            sig.Label,
+				Raw:              "",
+				Error:            toSigError(valerr),
+				HasMetadata:      true,
+				MetadataProvider: sig.Input.MetadataValues,
 			}
 			lasterr = valerr
 		}
 		// Verified and validated
 		vres.Signatures[sig.Label] = VerifiedSignature{
-			Label:    sig.Label,
-			Metadata: sig.Input.MetadataValues,
+			Label:            sig.Label,
+			KeySpec:          keyspec,
+			MetadataProvider: sig.Input.MetadataValues,
 		}
 	}
 
@@ -360,26 +373,36 @@ func extractSignatures(headers http.Header) (extractedSignatures, error) {
 	return extracted, nil
 }
 
-func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) error {
+func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) (KeySpecer, error) {
 	base, err := calculateSignatureBase(r, sig.Input)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var specer KeySpecer
 	var ks KeySpec
+	// Get keyspec
 	if slices.Contains(sig.Input.MetadataParams, MetaKeyID) {
 		keyid, err := sig.Input.MetadataValues.KeyID()
 		if err != nil {
-			return newError(ErrSigKeyFetch, "Could not get keyid from signature metadata", err)
+			return nil, newError(ErrSigKeyFetch, "Could not get keyid from signature metadata", err)
 		}
-		ks, err = ver.keys.FetchByKeyID(r.Context(), keyid)
+		specer, err = ver.keys.FetchByKeyID(r.Context(), r.Headers(), keyid)
 		if err != nil {
-			return newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
+			return nil, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
+		}
+		ks, err = specer.KeySpec()
+		if err != nil {
+			return nil, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
 		}
 	} else {
-		ks, err = ver.keys.Fetch(r.Context(), r.Headers(), sig.Input.MetadataValues)
+		specer, err = ver.keys.Fetch(r.Context(), r.Headers(), sig.Input.MetadataValues)
 		if err != nil {
-			return newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
+			return specer, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
+		}
+		ks, err = specer.KeySpec()
+		if err != nil {
+			return specer, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
 		}
 	}
 
@@ -393,37 +416,37 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) erro
 			msgHash := sha512.Sum512(base.base)
 			err := rsa.VerifyPSS(rsapub, crypto.SHA512, msgHash[:], sig.Signature, opts)
 			if err != nil {
-				return newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
-			return nil
+			return specer, nil
 		} else {
-			return newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_RSA_v1_5_sha256:
 		if rsapub, ok := ks.PubKey.(*rsa.PublicKey); ok {
 			msgHash := sha256.Sum256(base.base)
 			err := rsa.VerifyPKCS1v15(rsapub, crypto.SHA256, msgHash[:], sig.Signature)
 			if err != nil {
-				return newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
-			return nil
+			return specer, nil
 		} else {
-			return newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_HMAC_SHA256:
 		if len(ks.Secret) == 0 {
-			return newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
+			return specer, newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
 		}
 		msgHash := hmac.New(sha256.New, ks.Secret)
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		calcualtedSignature := msgHash.Sum(nil)
 		if !hmac.Equal(calcualtedSignature, sig.Signature) {
-			return newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+			return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 		}
 	case Algo_ECDSA_P256_SHA256:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
 			if len(sig.Signature) != 64 {
-				return newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 64 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
+				return specer, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 64 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
 			}
 			msgHash := sha256.Sum256(base.base)
 			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
@@ -432,15 +455,15 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) erro
 			s := new(big.Int)
 			s.SetBytes(sig.Signature[32:64])
 			if !ecdsa.Verify(epub, msgHash[:], r, s) {
-				return newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
-			return newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_ECDSA_P384_SHA384:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
 			if len(sig.Signature) != 96 {
-				return newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
+				return specer, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
 			}
 			msgHash := sha512.Sum384(base.base)
 			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
@@ -449,23 +472,23 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) erro
 			s := new(big.Int)
 			s.SetBytes(sig.Signature[48:96])
 			if !ecdsa.Verify(epub, msgHash[:], r, s) {
-				return newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
-			return newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_ED25519:
 		if edpubkey, ok := ks.PubKey.(ed25519.PublicKey); ok {
 			if !ed25519.Verify(edpubkey, base.base, sig.Signature) {
-				return newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
-			return newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires ed25519.PublicKey but got type: %T", ks.PubKey))
+			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires ed25519.PublicKey but got type: %T", ks.PubKey))
 		}
 	default:
-		return newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Invalid verification algorithm '%s'", ks.Algo))
+		return specer, newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Invalid verification algorithm '%s'", ks.Algo))
 	}
-	return nil
+	return specer, nil
 }
 
 func (vp VerifyProfile) validate(sig extractedSignature) error {

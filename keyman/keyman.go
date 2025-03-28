@@ -21,14 +21,14 @@ func NewKeyFetchInMemory(pubkeys map[string]httpsig.KeySpec) *KeyFetchInMemory {
 	return &KeyFetchInMemory{pubkeys}
 }
 
-func (kf *KeyFetchInMemory) FetchByKeyID(ctx context.Context, keyID string) (httpsig.KeySpec, error) {
+func (kf *KeyFetchInMemory) FetchByKeyID(ctx context.Context, rh http.Header, keyID string) (httpsig.KeySpecer, error) {
 	ks, found := kf.pubkeys[keyID]
 	if !found {
-		return httpsig.KeySpec{}, fmt.Errorf("Key for keyid '%s' not found", keyID)
+		return nil, fmt.Errorf("Key for keyid '%s' not found", keyID)
 	}
 	return ks, nil
 }
 
-func (kf *KeyFetchInMemory) Fetch(context.Context, http.Header, httpsig.MetadataProvider) (httpsig.KeySpec, error) {
+func (kf *KeyFetchInMemory) Fetch(context.Context, http.Header, httpsig.MetadataProvider) (httpsig.KeySpecer, error) {
 	return httpsig.KeySpec{}, fmt.Errorf("Fetch without keyid not supported")
 }

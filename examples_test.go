@@ -57,7 +57,7 @@ func ExampleNewHandler() {
 	myhandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Lookup the results of verification
 		if veriftyResult, ok := httpsig.GetVerifyResult(r.Context()); ok {
-			keyid, _ := veriftyResult.Signature().Metadata.KeyID()
+			keyid, _ := veriftyResult.Signature().KeyID()
 			fmt.Fprintf(w, "Hello, %s", keyid)
 		} else {
 			fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))

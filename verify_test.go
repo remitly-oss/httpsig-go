@@ -32,7 +32,7 @@ func TestVerify(t *testing.T) {
 				Signatures: map[string]httpsig.VerifiedSignature{
 					"sig-b21": {
 						Label: "sig-b21",
-						Metadata: &fixedMetadataProvider{map[httpsig.Metadata]any{
+						MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
 							httpsig.MetaKeyID:   "test-key-rsa-pss",
 							httpsig.MetaCreated: int64(1618884473),
 							httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
@@ -77,7 +77,7 @@ func TestVerifyInvalid(t *testing.T) {
 				Signatures: map[string]httpsig.VerifiedSignature{
 					"sig-b21": {
 						Label: "sig-b21",
-						Metadata: &fixedMetadataProvider{map[httpsig.Metadata]any{
+						MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
 							httpsig.MetaKeyID:   "test-key-rsa-pss",
 							httpsig.MetaCreated: int64(1618884473),
 							httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
@@ -109,7 +109,7 @@ func TestVerifyInvalid(t *testing.T) {
 				Signatures: map[string]httpsig.VerifiedSignature{
 					"sig-b21": {
 						Label: "sig-b21",
-						Metadata: &fixedMetadataProvider{map[httpsig.Metadata]any{
+						MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
 							httpsig.MetaKeyID:   "test-key-rsa-pss",
 							httpsig.MetaCreated: int64(1618884473),
 							httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
@@ -198,7 +198,6 @@ func metaVal[E comparable](f1 func() (E, error)) any {
 func getCmdOpts() []cmp.Option {
 	return []cmp.Option{
 		cmp.Transformer("Metadata", TransformMeta),
-		cmp.Transformer("InvalidSignature", TransformInvalidSig),
 	}
 
 }
@@ -214,23 +213,10 @@ func TransformMeta(md httpsig.MetadataProvider) map[string]any {
 	return out
 }
 
-func TransformInvalidSig(isig httpsig.InvalidSignature) map[string]any {
-
-	out := map[string]any{
-		"Label":       isig.Label,
-		"Raw":         isig.Raw,
-		"Error":       isig.Raw,
-		"HasMetadata": isig.HasMetadata,
-	}
-	if md, ok := isig.Metadata(); ok {
-		out["Metadata"] = TransformMeta(md)
-	}
-
-	return out
-}
-
 func createInvalidSignature(input httpsig.InvalidSignature, md httpsig.MetadataProvider) httpsig.InvalidSignature {
-	is := httpsig.NewInvalidSignature(md)
+	is := httpsig.InvalidSignature{
+		MetadataProvider: md,
+	}
 	is.Error = input.Error
 	is.HasMetadata = input.HasMetadata
 	is.Label = input.Label
