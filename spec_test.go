@@ -2,6 +2,7 @@ package httpsig
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -280,17 +281,17 @@ type fixedKeyFetch struct {
 	key           KeySpec
 }
 
-func (kf fixedKeyFetch) FetchByKeyID(keyID string) (KeySpec, error) {
+func (kf fixedKeyFetch) FetchByKeyID(ctx context.Context, rh http.Header, keyID string) (KeySpecer, error) {
 	if kf.requiredKeyID != "" && keyID != kf.requiredKeyID {
-		return KeySpec{}, &KeyError{
+		return nil, &KeyError{
 			error: fmt.Errorf("Invalid key id. Wanted '%s' got '%s'", kf.requiredKeyID, keyID),
 		}
 	}
 	return kf.key, nil
 }
 
-func (kf fixedKeyFetch) Fetch(rh http.Header, md MetadataProvider) (KeySpec, error) {
-	return KeySpec{}, fmt.Errorf("Fetch without a key id not supported.")
+func (kf fixedKeyFetch) Fetch(ctx context.Context, rh http.Header, md MetadataProvider) (KeySpecer, error) {
+	return nil, fmt.Errorf("Fetch without a key id not supported.")
 }
 
 // TestSpecRecreateSignature recreates the signature in the test cases.

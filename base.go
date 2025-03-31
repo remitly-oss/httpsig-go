@@ -1,6 +1,7 @@
 package httpsig
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,6 +45,13 @@ func (hrr httpMessage) SetBody(body io.ReadCloser) {
 		return
 	}
 	hrr.Req.Body = body
+}
+
+func (hrr httpMessage) Context() context.Context {
+	if hrr.IsResponse {
+		return context.Background()
+	}
+	return hrr.Req.Context()
 }
 
 /*
