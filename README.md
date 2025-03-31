@@ -5,7 +5,9 @@
 
 An implementation of HTTP Message Signatures from [RFC 9421](https://datatracker.ietf.org/doc/rfc9421/).
 
-HTTP signaturs are a mechanism for signing and verifying HTTP requests and responses.
+HTTP signatures are a mechanism for signing and verifying HTTP requests and responses.
+
+HTTP signatures can be (or will be able to) used for demonstrating proof-of-posession ([DPoP](https://www.rfc-editor.org/rfc/rfc9449.html)) for [OAuth](https://oauth.net/2/dpop/) bearer tokens.
 
 ## Supported Features
 The full specification is supported with the exception of the following. File a ticket or PR and support will be added
@@ -52,7 +54,7 @@ Create net/http Handlers that verify incoming requests to the server.
 ```
 
 ## Stability
-The public interface may change slightly before the v1 release.
+The v1.0 release is available for production testing.
 
 ## References
 
