@@ -145,9 +145,6 @@ type Verifier struct {
 
 // Verify validates the signatures in a request and ensured the signature meets the required profile.
 func Verify(req *http.Request, kf KeyFetcher, profile VerifyProfile) (VerifyResult, error) {
-	if kf == nil {
-		return VerifyResult{}, newError(ErrSigKeyFetch, "KeyFetcher cannot be nil")
-	}
 	ver, err := NewVerifier(kf, profile)
 	if err != nil {
 		return VerifyResult{}, err
@@ -164,6 +161,9 @@ func VerifyResponse(resp *http.Response, kf KeyFetcher, profile VerifyProfile) (
 }
 
 func NewVerifier(kf KeyFetcher, profile VerifyProfile) (*Verifier, error) {
+	if kf == nil {
+		return nil, newError(ErrSigKeyFetch, "KeyFetcher cannot be nil")
+	}
 	return &Verifier{
 		keys: kf,
 	}, nil
@@ -387,6 +387,7 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) (Key
 		if err != nil {
 			return nil, newError(ErrSigKeyFetch, "Could not get keyid from signature metadata", err)
 		}
+
 		specer, err = ver.keys.FetchByKeyID(r.Context(), r.Headers(), keyid)
 		if err != nil {
 			return nil, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)

@@ -30,5 +30,5 @@ func (kf *KeyFetchInMemory) FetchByKeyID(ctx context.Context, rh http.Header, ke
 }
 
 func (kf *KeyFetchInMemory) Fetch(context.Context, http.Header, httpsig.MetadataProvider) (httpsig.KeySpecer, error) {
-	return httpsig.KeySpec{}, fmt.Errorf("Fetch without keyid not supported")
+	return nil, fmt.Errorf("Fetch without keyid not supported")
 }
