@@ -1,6 +1,7 @@
 package httpsig_test
 
 import (
+	"crypto"
 	"fmt"
 	"html"
 	"net/http"
@@ -21,15 +22,14 @@ BznPJ5sSI1Jn+srosJB/GbEZ3Kg6PcEi+jODF9fdpNEaHGbbGdaVhJi1
 	pkey, _ := keyutil.ReadPrivateKey([]byte(pkeyEncoded))
 	req := httptest.NewRequest("GET", "https://example.com/data", nil)
 
-	params := httpsig.SigningOptions{
-		PrivateKey: pkey,
-		Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
-		Fields:     httpsig.DefaultRequiredFields,
-		Metadata:   []httpsig.Metadata{httpsig.MetaKeyID},
-		MetaKeyID:  "key123",
+	params := httpsig.SigningProfile{
+		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+		Fields:    httpsig.DefaultRequiredFields,
+		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
+		MetaKeyID: "key123",
 	}
 
-	signer, _ := httpsig.NewSigner(params)
+	signer, _ := httpsig.NewSigner(params, pkey)
 	signer.Sign(req)
 }
 
@@ -73,16 +73,16 @@ func ExampleNewHandler() {
 }
 
 func ExampleClient() {
-	params := httpsig.SigningOptions{
-		PrivateKey: nil, // Fill in your private key
-		Algorithm:  httpsig.Algo_ECDSA_P256_SHA256,
-		Fields:     httpsig.DefaultRequiredFields,
-		Metadata:   []httpsig.Metadata{httpsig.MetaKeyID},
-		MetaKeyID:  "key123",
+	params := httpsig.SigningProfile{
+		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+		Fields:    httpsig.DefaultRequiredFields,
+		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
+		MetaKeyID: "key123",
 	}
+	var privateKey crypto.PrivateKey // Get your private key
 
 	// Create the signature signer
-	signer, _ := httpsig.NewSigner(params)
+	signer, _ := httpsig.NewSigner(params, privateKey)
 
 	// Create a net/http Client that signs all requests
 	signingClient := httpsig.NewHTTPClient(nil, signer, nil)

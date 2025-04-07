@@ -44,14 +44,14 @@ func FuzzSigningOptions1(f *testing.F) {
 				keyID: tag,
 			},
 		})
-		so := SigningOptions{
-			PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
-			Algorithm:  Algo_ED25519,
-			Fields:     Fields(label, keyID, tag),
-			Metadata:   []Metadata{MetaKeyID, MetaTag},
-			Label:      label,
-			MetaKeyID:  keyID,
-			MetaTag:    tag,
+		privKey := sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key")
+		so := SigningProfile{
+			Algorithm: Algo_ED25519,
+			Fields:    Fields(label, keyID, tag),
+			Metadata:  []Metadata{MetaKeyID, MetaTag},
+			Label:     label,
+			MetaKeyID: keyID,
+			MetaTag:   tag,
 		}
 		if so.validate() != nil {
 			// Catching invalidate signing options is good.
@@ -63,7 +63,7 @@ func FuzzSigningOptions1(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		err = Sign(req, so)
+		err = Sign(req, so, privKey)
 		if err != nil {
 			if _, ok := err.(*SignatureError); ok {
 				// Handled error
@@ -112,10 +112,10 @@ func FuzzSigningOptionsFields(f *testing.F) {
 				},
 			})
 		}
-		so := SigningOptions{
-			PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
-			Algorithm:  Algo_ED25519,
-			Fields:     fields,
+		privKey := sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key")
+		so := SigningProfile{
+			Algorithm: Algo_ED25519,
+			Fields:    fields,
 		}
 		if so.validate() != nil {
 			// Catching invalidate signing options is good.
@@ -127,7 +127,7 @@ func FuzzSigningOptionsFields(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		err = Sign(req, so)
+		err = Sign(req, so, privKey)
 		if err != nil {
 			if _, ok := err.(*SignatureError); ok {
 				// Handled error
@@ -183,11 +183,11 @@ func FuzzMetadata(f *testing.F) {
 		t.Logf("keyid: %s\n", keyid)
 		t.Logf("tag: %s\n", tag)
 
-		so := SigningOptions{
-			PrivateKey: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
-			Algorithm:  Algo_ED25519,
-			Fields:     Fields(),
-			Metadata:   []Metadata{MetaCreated, MetaExpires, MetaNonce, MetaAlgorithm, MetaKeyID, MetaTag},
+		privKey := sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key")
+		so := SigningProfile{
+			Algorithm: Algo_ED25519,
+			Fields:    Fields(),
+			Metadata:  []Metadata{MetaCreated, MetaExpires, MetaNonce, MetaAlgorithm, MetaKeyID, MetaTag},
 		}
 		if so.validate() != nil {
 			// Catching invalidate signing options is good.
@@ -209,7 +209,7 @@ func FuzzMetadata(f *testing.F) {
 				MetaTag:       tag,
 			},
 		}
-		err = Sign(req, so, mdp)
+		err = Sign(req, so, privKey, mdp)
 		if err != nil {
 			if _, ok := err.(*SignatureError); ok {
 				// Handled error
