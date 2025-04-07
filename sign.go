@@ -51,24 +51,6 @@ const (
 	NonceRandom32 = iota // 32 bit random nonce. Base64 encoded
 )
 
-type SigningOptions struct {
-	PrivateKey crypto.PrivateKey // Required for asymetric algorithms
-	Secret     []byte            // Required for HMAC signing
-	Algorithm  Algorithm
-	Digest     Digest        // The http digest algorithm to apply. Defaults to sha-256.
-	Fields     []SignedField // Fields and Derived components to sign
-	Metadata   []Metadata    // Metadata parameters to add to the signature
-	Label      string        // The signature label. Defaults to DefaultSignatureLabel
-
-	// Signature metadata settings.
-	// These are only added to the signature if the parameter is listed in the Metadata list.
-	MetaKeyID           string        // 'keyid' - No default. A value must be provided if the parameter is in Metadata.
-	MetaTag             string        // 'tag' - No default. A value must be provided if the parameter is in Metadata.
-	MetaExpiresDuration time.Duration // 'expires' - Current time plus this duration. Default duration 5 minutes.
-	MetaNonce           NonceScheme   // 'nonce' - Defaults to NonceRandom32
-	// Algorithm is the metdata value if 'alg' is included in the Metadata list.
-}
-
 // MetadataProvider allows customized functions for metadata parameter values. Not needed for default usage.
 type MetadataProvider interface {
 	Created() (int, error)
@@ -79,15 +61,32 @@ type MetadataProvider interface {
 	Tag() (string, error)
 }
 
-func (so SigningOptions) Created() (int, error) {
+// SigningProfile is the set of fields, metadata, and the label to include in a signature.
+type SigningProfile struct {
+	Algorithm Algorithm
+	Digest    Digest        // The http digest algorithm to apply. Defaults to sha-256.
+	Fields    []SignedField // Fields and Derived components to sign
+	Metadata  []Metadata    // Metadata parameters to add to the signature
+	Label     string        // The signature label. Defaults to DefaultSignatureLabel
+
+	// Signature metadata settings.
+	// These are only added to the signature if the parameter is listed in the Metadata list.
+	MetaKeyID           string        // 'keyid' - No default. A value must be provided if the parameter is in Metadata.
+	MetaTag             string        // 'tag' - No default. A value must be provided if the parameter is in Metadata.
+	MetaExpiresDuration time.Duration // 'expires' - Current time plus this duration. Default duration 5 minutes.
+	MetaNonce           NonceScheme   // 'nonce' - Defaults to NonceRandom32
+	// Algorithm is the metdata value if 'alg' is included in the Metadata list.
+}
+
+func (so SigningProfile) Created() (int, error) {
 	return int(time.Now().Unix()), nil
 }
 
-func (so SigningOptions) Expires() (int, error) {
+func (so SigningProfile) Expires() (int, error) {
 	return int(time.Now().Add(so.MetaExpiresDuration).Unix()), nil
 }
 
-func (so SigningOptions) Nonce() (string, error) {
+func (so SigningProfile) Nonce() (string, error) {
 	switch so.MetaNonce {
 	case NonceRandom32:
 		return genNonce(), nil
@@ -95,14 +94,14 @@ func (so SigningOptions) Nonce() (string, error) {
 	return "", fmt.Errorf("Invalid nonce scheme '%d'", so.MetaNonce)
 }
 
-func (so SigningOptions) Alg() (string, error) {
+func (so SigningProfile) Alg() (string, error) {
 	return string(so.Algorithm), nil
 }
 
-func (so SigningOptions) KeyID() (string, error) {
+func (so SigningProfile) KeyID() (string, error) {
 	return so.MetaKeyID, nil
 }
-func (so SigningOptions) Tag() (string, error) {
+func (so SigningProfile) Tag() (string, error) {
 	return so.MetaTag, nil
 }
 
@@ -137,8 +136,8 @@ func Fields(fields ...string) []SignedField {
 	return all
 }
 
-func Sign(req *http.Request, params SigningOptions, mdp ...MetadataProvider) error {
-	s, err := NewSigner(params, mdp...)
+func Sign(req *http.Request, params SigningProfile, privateKey crypto.PrivateKey, mdp ...MetadataProvider) error {
+	s, err := NewSigner(params, privateKey, mdp...)
 	if err != nil {
 		return err
 	}
@@ -146,19 +145,37 @@ func Sign(req *http.Request, params SigningOptions, mdp ...MetadataProvider) err
 }
 
 type Signer struct {
-	options SigningOptions
+	options SigningProfile
+	key     crypto.PrivateKey
+	secret  []byte
 	mdp     MetadataProvider
 }
 
-func NewSigner(params SigningOptions, mdp ...MetadataProvider) (*Signer, error) {
-	err := params.validate()
+func NewSigner(profile SigningProfile, privateKey crypto.PrivateKey, mdp ...MetadataProvider) (*Signer, error) {
+	return newSigner(profile, privateKey, nil, mdp...)
+}
+
+func NewSignerWithSecret(profile SigningProfile, secret []byte, mdp ...MetadataProvider) (*Signer, error) {
+	return newSigner(profile, nil, secret, mdp...)
+}
+
+func newSigner(profile SigningProfile, key crypto.PrivateKey, secret []byte, mdp ...MetadataProvider) (*Signer, error) {
+	err := profile.validate()
 	if err != nil {
 		return nil, err
 	}
-	opts := params.withDefaults()
+	if profile.Algorithm.symmetric() && len(secret) == 0 {
+		return nil, newError(ErrInvalidSignatureOptions, "Missing required signing option 'Secret'")
+	}
+	if !profile.Algorithm.symmetric() && key == nil {
+		return nil, newError(ErrInvalidSignatureOptions, "Missing required signing option 'PrivateKey'")
+	}
+	opts := profile.withDefaults()
 	s := &Signer{
 		options: opts,
 		mdp:     opts,
+		key:     key,
+		secret:  secret,
 	}
 	if len(mdp) > 0 {
 		s.mdp = mdp[0]
@@ -194,8 +211,8 @@ func (s *Signer) Sign(req *http.Request) error {
 		}, sigParameters{
 			Base:       baseParams,
 			Algo:       s.options.Algorithm,
-			PrivateKey: s.options.PrivateKey,
-			Secret:     s.options.Secret,
+			PrivateKey: s.key,
+			Secret:     s.secret,
 			Label:      DefaultSignatureLabel,
 		})
 }
@@ -213,13 +230,13 @@ func (s *Signer) SignResponse(resp *http.Response) error {
 		}, sigParameters{
 			Base:       baseParams,
 			Algo:       s.options.Algorithm,
-			PrivateKey: s.options.PrivateKey,
+			PrivateKey: s.key,
 			Label:      DefaultSignatureLabel,
 		})
 }
 
 // translation
-func (sp SigningOptions) baseParameters(mdp MetadataProvider) (sigBaseInput, error) {
+func (sp SigningProfile) baseParameters(mdp MetadataProvider) (sigBaseInput, error) {
 	bp := sigBaseInput{
 		Components:     componentsIDs(sp.Fields),
 		MetadataParams: sp.Metadata,
@@ -231,18 +248,9 @@ func (sp SigningOptions) baseParameters(mdp MetadataProvider) (sigBaseInput, err
 	return bp, nil
 }
 
-func (so SigningOptions) validate() error {
+func (so SigningProfile) validate() error {
 	if so.Algorithm == "" {
 		return fmt.Errorf("Missing required signing option 'Algorithm'")
-	}
-	if so.Algorithm.symmetric() {
-		if len(so.Secret) == 0 {
-			return newError(ErrInvalidSignatureOptions, "Missing required signing option 'Secret'")
-		}
-	} else {
-		if so.PrivateKey == nil {
-			return newError(ErrInvalidSignatureOptions, "Missing required signing option 'PrivateKey'")
-		}
 	}
 
 	if !isSafeString(so.Label) {
@@ -275,10 +283,8 @@ func (so SigningOptions) validate() error {
 	return nil
 }
 
-func (so SigningOptions) withDefaults() SigningOptions {
-	final := SigningOptions{
-		PrivateKey:          so.PrivateKey,
-		Secret:              so.Secret,
+func (so SigningProfile) withDefaults() SigningProfile {
+	final := SigningProfile{
 		Algorithm:           so.Algorithm,
 		Digest:              so.Digest,
 		Fields:              so.Fields,
