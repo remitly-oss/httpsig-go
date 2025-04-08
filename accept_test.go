@@ -11,19 +11,21 @@ func TestAcceptParseSignature(t *testing.T) {
 		Name            string
 		Desc            string
 		AcceptHeader    string
-		Expected        SigningProfile
+		Expected        AcceptSignature
 		ExpectedErrCode ErrCode
 	}{
 		{
 			Name:         "FromSpecification",
 			Desc:         "Accept header used in the RFC",
 			AcceptHeader: `sig1=("@method" "@target-uri" "@authority" "content-digest" "cache-control");keyid="test-key-rsa-pss";created;tag="app-123"`,
-			Expected: SigningProfile{
-				Fields:    Fields("@method", "@target-uri", "@authority", "content-digest", "cache-control"),
-				Metadata:  []Metadata{"keyid", "created", "tag"},
-				Label:     "sig1",
+			Expected: AcceptSignature{
 				MetaKeyID: "test-key-rsa-pss",
 				MetaTag:   "app-123",
+				Profile: SigningProfile{
+					Fields:   Fields("@method", "@target-uri", "@authority", "content-digest", "cache-control"),
+					Metadata: []Metadata{"keyid", "created", "tag"},
+					Label:    "sig1",
+				},
 			},
 		},
 		{
