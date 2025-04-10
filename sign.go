@@ -51,58 +51,15 @@ const (
 	NonceRandom32 = iota // 32 bit random nonce. Base64 encoded
 )
 
-// MetadataProvider allows customized functions for metadata parameter values. Not needed for default usage.
-type MetadataProvider interface {
-	Created() (int, error)
-	Expires() (int, error)
-	Nonce() (string, error)
-	Alg() (string, error)
-	KeyID() (string, error)
-	Tag() (string, error)
-}
-
 // SigningProfile is the set of fields, metadata, and the label to include in a signature.
 type SigningProfile struct {
-	Algorithm Algorithm
-	Digest    Digest        // The http digest algorithm to apply. Defaults to sha-256.
-	Fields    []SignedField // Fields and Derived components to sign
-	Metadata  []Metadata    // Metadata parameters to add to the signature
-	Label     string        // The signature label. Defaults to DefaultSignatureLabel
-
-	// Signature metadata settings.
-	// These are only added to the signature if the parameter is listed in the Metadata list.
-	MetaKeyID           string        // 'keyid' - No default. A value must be provided if the parameter is in Metadata.
-	MetaTag             string        // 'tag' - No default. A value must be provided if the parameter is in Metadata.
-	MetaExpiresDuration time.Duration // 'expires' - Current time plus this duration. Default duration 5 minutes.
-	MetaNonce           NonceScheme   // 'nonce' - Defaults to NonceRandom32
-	// Algorithm is the metdata value if 'alg' is included in the Metadata list.
-}
-
-func (so SigningProfile) Created() (int, error) {
-	return int(time.Now().Unix()), nil
-}
-
-func (so SigningProfile) Expires() (int, error) {
-	return int(time.Now().Add(so.MetaExpiresDuration).Unix()), nil
-}
-
-func (so SigningProfile) Nonce() (string, error) {
-	switch so.MetaNonce {
-	case NonceRandom32:
-		return genNonce(), nil
-	}
-	return "", fmt.Errorf("Invalid nonce scheme '%d'", so.MetaNonce)
-}
-
-func (so SigningProfile) Alg() (string, error) {
-	return string(so.Algorithm), nil
-}
-
-func (so SigningProfile) KeyID() (string, error) {
-	return so.MetaKeyID, nil
-}
-func (so SigningProfile) Tag() (string, error) {
-	return so.MetaTag, nil
+	Algorithm       Algorithm
+	Digest          Digest        // The http digest algorithm to apply. Defaults to sha-256.
+	Fields          []SignedField // Fields and Derived components to sign.
+	Metadata        []Metadata    // Metadata parameters to add to the signature.
+	Label           string        // The signature label. Defaults to DefaultSignatureLabel.
+	ExpiresDuration time.Duration // Current time plus this duration. Default duration 5 minutes. Used only if included in Metadata.
+	Nonce           NonceScheme   // Scheme to use for generating the nonce if included in Metadata.
 }
 
 // SignedField indicates which part of the request or response to use for signing.
@@ -110,18 +67,6 @@ func (so SigningProfile) Tag() (string, error) {
 type SignedField struct {
 	Name       string
 	Parameters map[string]any // Parameters are modifiers applied to the field that changes the way the signature is calculated.
-}
-
-type signedFields []SignedField
-
-func (sf signedFields) includes(field string) bool {
-	target := strings.ToLower(field)
-	for _, fld := range sf {
-		if fld.Name == target {
-			return true
-		}
-	}
-	return false
 }
 
 // Fields turns a list of fields into the full specification. Used when the signed fields/components do not need to specify any parameters
@@ -136,71 +81,59 @@ func Fields(fields ...string) []SignedField {
 	return all
 }
 
-func Sign(req *http.Request, params SigningProfile, privateKey crypto.PrivateKey, mdp ...MetadataProvider) error {
-	s, err := NewSigner(params, privateKey, mdp...)
+type SigningKey struct {
+	Key    crypto.PrivateKey // private key for asymmetric algorithms
+	Secret []byte            // Secret to use for symmetric algorithms
+	// Meta fields
+	MetaKeyID string // 'keyid' - Only used if 'keyid' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile. Metadata.
+	MetaTag   string // 'tag'. Only used if 'tag' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile.
+}
+
+type Signer struct {
+	profile SigningProfile
+	skey    SigningKey
+}
+
+func NewSigner(profile SigningProfile, skey SigningKey) (*Signer, error) {
+	err := profile.validate(skey)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := profile.withDefaults()
+	s := &Signer{
+		profile: opts,
+		skey:    skey,
+	}
+	return s, nil
+}
+
+func Sign(req *http.Request, params SigningProfile, skey SigningKey) error {
+	s, err := NewSigner(params, skey)
 	if err != nil {
 		return err
 	}
 	return s.Sign(req)
 }
 
-type Signer struct {
-	options SigningProfile
-	key     crypto.PrivateKey
-	secret  []byte
-	mdp     MetadataProvider
-}
-
-func NewSigner(profile SigningProfile, privateKey crypto.PrivateKey, mdp ...MetadataProvider) (*Signer, error) {
-	return newSigner(profile, privateKey, nil, mdp...)
-}
-
-func NewSignerWithSecret(profile SigningProfile, secret []byte, mdp ...MetadataProvider) (*Signer, error) {
-	return newSigner(profile, nil, secret, mdp...)
-}
-
-func newSigner(profile SigningProfile, key crypto.PrivateKey, secret []byte, mdp ...MetadataProvider) (*Signer, error) {
-	err := profile.validate()
-	if err != nil {
-		return nil, err
-	}
-	if profile.Algorithm.symmetric() && len(secret) == 0 {
-		return nil, newError(ErrInvalidSignatureOptions, "Missing required signing option 'Secret'")
-	}
-	if !profile.Algorithm.symmetric() && key == nil {
-		return nil, newError(ErrInvalidSignatureOptions, "Missing required signing option 'PrivateKey'")
-	}
-	opts := profile.withDefaults()
-	s := &Signer{
-		options: opts,
-		mdp:     opts,
-		key:     key,
-		secret:  secret,
-	}
-	if len(mdp) > 0 {
-		s.mdp = mdp[0]
-	}
-	return s, nil
-}
-
 // Sign signs the request and adds the signature headers to the request.
 // If the signature fields includes Content-Digest and Content-Digest is not already included in the request then Sign will read the request body to calculate the digest and set the header.  The request body will be replaced with a new io.ReaderCloser.
 func (s *Signer) Sign(req *http.Request) error {
 	// Add the content-digest if covered by the signature and not already present
-	if signedFields(s.options.Fields).includes("content-digest") && req.Header.Get("Content-Digest") == "" {
-		di, err := digestBody(s.options.Digest, req.Body)
+	if signedFields(s.profile.Fields).includes("content-digest") && req.Header.Get("Content-Digest") == "" {
+		di, err := digestBody(s.profile.Digest, req.Body)
 		if err != nil {
 			return err
 		}
 		req.Body = di.NewBody
-		digestValue, err := createDigestHeader(s.options.Digest, di.Digest)
+		digestValue, err := createDigestHeader(s.profile.Digest, di.Digest)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Content-Digest", digestValue)
 	}
 
-	baseParams, err := s.options.baseParameters(s.mdp)
+	baseParams, err := s.baseParameters()
 	if err != nil {
 		return err
 	}
@@ -210,15 +143,15 @@ func (s *Signer) Sign(req *http.Request) error {
 			Req: req,
 		}, sigParameters{
 			Base:       baseParams,
-			Algo:       s.options.Algorithm,
-			PrivateKey: s.key,
-			Secret:     s.secret,
+			Algo:       s.profile.Algorithm,
+			PrivateKey: s.skey.Key,
+			Secret:     s.skey.Secret,
 			Label:      DefaultSignatureLabel,
 		})
 }
 
 func (s *Signer) SignResponse(resp *http.Response) error {
-	baseParams, err := s.options.baseParameters(s.mdp)
+	baseParams, err := s.baseParameters()
 	if err != nil {
 		return err
 	}
@@ -229,30 +162,61 @@ func (s *Signer) SignResponse(resp *http.Response) error {
 			Resp:       resp,
 		}, sigParameters{
 			Base:       baseParams,
-			Algo:       s.options.Algorithm,
-			PrivateKey: s.key,
+			Algo:       s.profile.Algorithm,
+			PrivateKey: s.skey.Key,
+			Secret:     s.skey.Secret,
 			Label:      DefaultSignatureLabel,
 		})
 }
 
-// translation
-func (sp SigningProfile) baseParameters(mdp MetadataProvider) (sigBaseInput, error) {
+func (s *Signer) baseParameters() (sigBaseInput, error) {
 	bp := sigBaseInput{
-		Components:     componentsIDs(sp.Fields),
-		MetadataParams: sp.Metadata,
-		MetadataValues: sp,
+		Components:     componentsIDs(s.profile.Fields),
+		MetadataParams: s.profile.Metadata,
+		MetadataValues: s,
 	}
-	if mdp != nil {
-		bp.MetadataValues = mdp
-	}
+
 	return bp, nil
 }
 
-func (so SigningProfile) validate() error {
+func (s *Signer) Created() (int, error) {
+	return int(time.Now().Unix()), nil
+}
+
+func (s *Signer) Expires() (int, error) {
+	return int(time.Now().Add(s.profile.ExpiresDuration).Unix()), nil
+}
+
+func (s *Signer) Nonce() (string, error) {
+	switch s.profile.Nonce {
+	case NonceRandom32:
+		return nonceRandom32()
+	}
+	return "", fmt.Errorf("Invalid nonce scheme '%d'", s.profile.Nonce)
+}
+
+func (s *Signer) Alg() (string, error) {
+	return string(s.profile.Algorithm), nil
+}
+
+func (s *Signer) KeyID() (string, error) {
+	return s.skey.MetaKeyID, nil
+}
+
+func (s *Signer) Tag() (string, error) {
+	return s.skey.MetaTag, nil
+}
+
+func (so SigningProfile) validate(skey SigningKey) error {
 	if so.Algorithm == "" {
 		return fmt.Errorf("Missing required signing option 'Algorithm'")
 	}
-
+	if so.Algorithm.symmetric() && len(skey.Secret) == 0 {
+		return newError(ErrInvalidSignatureOptions, "Missing required 'Secret' value in SigningKey")
+	}
+	if !so.Algorithm.symmetric() && skey.Key == nil {
+		return newError(ErrInvalidSignatureOptions, "Missing required 'Key' value in SigningKey")
+	}
 	if !isSafeString(so.Label) {
 		return fmt.Errorf("Invalid label name '%s'", so.Label)
 	}
@@ -265,17 +229,17 @@ func (so SigningProfile) validate() error {
 	for _, md := range so.Metadata {
 		switch md {
 		case MetaKeyID:
-			if so.MetaKeyID == "" {
+			if skey.MetaKeyID == "" {
 				return fmt.Errorf("'keyid' metadata parameter was listed but missing MetaKeyID value'")
 			}
-			if !isSafeString(so.MetaKeyID) {
+			if !isSafeString(skey.MetaKeyID) {
 				return fmt.Errorf("'keyid' metadata parameter can only contain printable characters'")
 			}
 		case MetaTag:
-			if so.MetaTag == "" {
+			if skey.MetaTag == "" {
 				return fmt.Errorf("'tag' metadata parameter was listed but missing MetaTag value'")
 			}
-			if !isSafeString(so.MetaTag) {
+			if !isSafeString(skey.MetaTag) {
 				return fmt.Errorf("'tag' metadata parameter can only contain printable characters'")
 			}
 		}
@@ -283,24 +247,22 @@ func (so SigningProfile) validate() error {
 	return nil
 }
 
-func (so SigningProfile) withDefaults() SigningProfile {
+func (sp SigningProfile) withDefaults() SigningProfile {
 	final := SigningProfile{
-		Algorithm:           so.Algorithm,
-		Digest:              so.Digest,
-		Fields:              so.Fields,
-		Metadata:            so.Metadata,
-		Label:               so.Label,
-		MetaKeyID:           so.MetaKeyID,
-		MetaTag:             so.MetaTag,
-		MetaExpiresDuration: so.MetaExpiresDuration,
-		MetaNonce:           NonceRandom32,
+		Algorithm:       sp.Algorithm,
+		Digest:          sp.Digest,
+		Fields:          sp.Fields,
+		Metadata:        sp.Metadata,
+		Label:           sp.Label,
+		ExpiresDuration: sp.ExpiresDuration,
+		Nonce:           NonceRandom32,
 	}
 	// Defaults
 	if final.Label == "" {
 		final.Label = DefaultSignatureLabel
 	}
-	if final.MetaExpiresDuration == 0 {
-		final.MetaExpiresDuration = time.Minute * 5
+	if final.ExpiresDuration == 0 {
+		final.ExpiresDuration = time.Minute * 5
 	}
 	if final.Digest == "" {
 		final.Digest = DigestSHA256
@@ -318,6 +280,18 @@ func (sf SignedField) componentID() componentID {
 		Name: strings.ToLower(sf.Name),
 		Item: item,
 	}
+}
+
+type signedFields []SignedField
+
+func (sf signedFields) includes(field string) bool {
+	target := strings.ToLower(field)
+	for _, fld := range sf {
+		if fld.Name == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (a Algorithm) symmetric() bool {

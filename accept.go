@@ -6,33 +6,41 @@ import (
 	sfv "github.com/dunglas/httpsfv"
 )
 
-func ParseAcceptSignature(acceptHeader string) (SigningProfile, error) {
+type AcceptSignature struct {
+	Profile   SigningProfile
+	MetaNonce string // 'nonce'
+	MetaKeyID string // 'keyid'
+	MetaTag   string // 'tag' - No default. A value must be provided if the parameter is in Metadata.
+}
+
+func ParseAcceptSignature(acceptHeader string) (AcceptSignature, error) {
+	as := AcceptSignature{}
 	acceptDict, err := sfv.UnmarshalDictionary([]string{acceptHeader})
 	if err != nil {
-		return SigningProfile{}, newError(ErrInvalidAcceptSignature, "Unable to parse Accept-Signature value", err)
+		return as, newError(ErrInvalidAcceptSignature, "Unable to parse Accept-Signature value", err)
 	}
 	profiles := acceptDict.Names()
 	if len(profiles) == 0 {
-		return SigningProfile{}, newError(ErrMissingAcceptSignature, "No Accept-Signature value")
+		return as, newError(ErrMissingAcceptSignature, "No Accept-Signature value")
 	}
 
 	label := profiles[0]
 	profileItems, _ := acceptDict.Get(label)
 	profileList, isList := profileItems.(sfv.InnerList)
 	if !isList {
-		return SigningProfile{}, newError(ErrInvalidAcceptSignature, "Unable to parse Accept-Signature value. Accept-Signature must be a dictionary.")
+		return as, newError(ErrInvalidAcceptSignature, "Unable to parse Accept-Signature value. Accept-Signature must be a dictionary.")
 	}
 
 	fields := []string{}
 	for _, componentItem := range profileList.Items {
 		field, ok := componentItem.Value.(string)
 		if !ok {
-			return SigningProfile{}, newError(ErrInvalidAcceptSignature, fmt.Sprintf("Invalid signature component '%v', Components must be strings", componentItem.Value))
+			return as, newError(ErrInvalidAcceptSignature, fmt.Sprintf("Invalid signature component '%v', Components must be strings", componentItem.Value))
 
 		}
 		fields = append(fields, field)
 	}
-	so := SigningProfile{
+	as.Profile = SigningProfile{
 		Fields:   Fields(fields...),
 		Label:    label,
 		Metadata: []Metadata{},
@@ -40,18 +48,21 @@ func ParseAcceptSignature(acceptHeader string) (SigningProfile, error) {
 
 	md := metadataProviderFromParams{profileList.Params}
 	for _, meta := range profileList.Params.Names() {
-		so.Metadata = append(so.Metadata, Metadata(meta))
+		as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
 		switch Metadata(meta) {
+		case MetaNonce:
+			as.MetaNonce, _ = md.Nonce()
 		case MetaAlgorithm:
 			alg, _ := md.Alg()
-			so.Algorithm = Algorithm(alg)
+			as.Profile.Algorithm = Algorithm(alg)
 		case MetaKeyID:
-			so.MetaKeyID, _ = md.KeyID()
+			as.MetaKeyID, _ = md.KeyID()
 		case MetaTag:
-			so.MetaTag, _ = md.Tag()
+			as.MetaTag, _ = md.Tag()
+
 		}
 	}
 
-	return so, nil
+	return as, nil
 
 }

@@ -26,6 +26,16 @@ const (
 	authority derived = "@authority"
 )
 
+// MetadataProvider allows customized functions for metadata parameter values. Not needed for default usage.
+type MetadataProvider interface {
+	Created() (int, error)
+	Expires() (int, error)
+	Nonce() (string, error)
+	Alg() (string, error)
+	KeyID() (string, error)
+	Tag() (string, error)
+}
+
 type signatureBase struct {
 	base           []byte // The full signature base. Use this as input to signing and verification
 	signatureInput string // The signature-input line
@@ -129,8 +139,4 @@ func sign(hrr httpMessage, sp sigParameters) error {
 
 func timestamp(nowtime func() time.Time) int {
 	return int(nowtime().Unix())
-}
-
-func genNonce() string {
-	return ""
 }

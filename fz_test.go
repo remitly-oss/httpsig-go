@@ -50,10 +50,13 @@ func FuzzSigningOptions1(f *testing.F) {
 			Fields:    Fields(label, keyID, tag),
 			Metadata:  []Metadata{MetaKeyID, MetaTag},
 			Label:     label,
+		}
+		sk := SigningKey{
+			Key:       privKey,
 			MetaKeyID: keyID,
 			MetaTag:   tag,
 		}
-		if so.validate() != nil {
+		if so.validate(sk) != nil {
 			// Catching invalidate signing options is good.
 			return
 		}
@@ -63,7 +66,7 @@ func FuzzSigningOptions1(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		err = Sign(req, so, privKey)
+		err = Sign(req, so, sk)
 		if err != nil {
 			if _, ok := err.(*SignatureError); ok {
 				// Handled error
@@ -112,12 +115,15 @@ func FuzzSigningOptionsFields(f *testing.F) {
 				},
 			})
 		}
-		privKey := sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key")
+
 		so := SigningProfile{
 			Algorithm: Algo_ED25519,
 			Fields:    fields,
 		}
-		if so.validate() != nil {
+		sk := SigningKey{
+			Key: sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key"),
+		}
+		if so.validate(sk) != nil {
 			// Catching invalidate signing options is good.
 			return
 		}
@@ -127,89 +133,7 @@ func FuzzSigningOptionsFields(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		err = Sign(req, so, privKey)
-		if err != nil {
-			if _, ok := err.(*SignatureError); ok {
-				// Handled error
-				return
-			}
-			// Unhandled error
-			t.Error(err)
-		}
-	})
-}
-
-func FuzzMetadata(f *testing.F) {
-	testcases := []struct {
-		Created int
-		Expires int
-		Nonce   string
-		Alg     string
-		KeyID   string
-		Tag     string
-	}{
-		{
-			Created: 0,
-			Expires: 0,
-			Nonce:   "",
-			Alg:     "",
-			KeyID:   "",
-			Tag:     "",
-		},
-		{
-			Created: 0,
-			Expires: 0,
-			Nonce:   "\xde",
-			Alg:     "",
-			KeyID:   "",
-			Tag:     "",
-		},
-	}
-
-	for _, tc := range testcases {
-		f.Add(tc.Created, tc.Expires, tc.Nonce, tc.Alg, tc.KeyID, tc.Tag)
-	}
-
-	reqtxt, err := os.ReadFile("testdata/rfc-test-request.txt")
-	if err != nil {
-		f.Fatal(err)
-	}
-
-	f.Fuzz(func(t *testing.T, created, expires int, nonce, alg, keyid, tag string) {
-		t.Logf("created: %d\n", created)
-		t.Logf("expires: %d\n", expires)
-		t.Logf("nonce: %s\n", nonce)
-		t.Logf("alg: %s\n", alg)
-		t.Logf("keyid: %s\n", keyid)
-		t.Logf("tag: %s\n", tag)
-
-		privKey := sigtest.ReadTestPrivateKey(t, "test-key-ed25519.key")
-		so := SigningProfile{
-			Algorithm: Algo_ED25519,
-			Fields:    Fields(),
-			Metadata:  []Metadata{MetaCreated, MetaExpires, MetaNonce, MetaAlgorithm, MetaKeyID, MetaTag},
-		}
-		if so.validate() != nil {
-			// Catching invalidate signing options is good.
-			return
-		}
-
-		req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(reqtxt)))
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		mdp := fixedMetadataProvider{
-			values: map[Metadata]any{
-				MetaCreated:   created,
-				MetaExpires:   expires,
-				MetaNonce:     nonce,
-				MetaAlgorithm: alg,
-				MetaKeyID:     keyid,
-				MetaTag:       tag,
-			},
-		}
-		err = Sign(req, so, privKey, mdp)
+		err = Sign(req, so, sk)
 		if err != nil {
 			if _, ok := err.(*SignatureError); ok {
 				// Handled error

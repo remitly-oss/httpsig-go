@@ -22,14 +22,17 @@ BznPJ5sSI1Jn+srosJB/GbEZ3Kg6PcEi+jODF9fdpNEaHGbbGdaVhJi1
 	pkey, _ := keyutil.ReadPrivateKey([]byte(pkeyEncoded))
 	req := httptest.NewRequest("GET", "https://example.com/data", nil)
 
-	params := httpsig.SigningProfile{
+	profile := httpsig.SigningProfile{
 		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
 		Fields:    httpsig.DefaultRequiredFields,
 		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
+	}
+	skey := httpsig.SigningKey{
+		Key:       pkey,
 		MetaKeyID: "key123",
 	}
 
-	signer, _ := httpsig.NewSigner(params, pkey)
+	signer, _ := httpsig.NewSigner(profile, skey)
 	signer.Sign(req)
 }
 
@@ -73,16 +76,19 @@ func ExampleNewHandler() {
 }
 
 func ExampleClient() {
-	params := httpsig.SigningProfile{
+	profile := httpsig.SigningProfile{
 		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
 		Fields:    httpsig.DefaultRequiredFields,
 		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
-		MetaKeyID: "key123",
 	}
 	var privateKey crypto.PrivateKey // Get your private key
 
+	sk := httpsig.SigningKey{
+		Key:       privateKey,
+		MetaKeyID: "key123",
+	}
 	// Create the signature signer
-	signer, _ := httpsig.NewSigner(params, privateKey)
+	signer, _ := httpsig.NewSigner(profile, sk)
 
 	// Create a net/http Client that signs all requests
 	signingClient := httpsig.NewHTTPClient(nil, signer, nil)
