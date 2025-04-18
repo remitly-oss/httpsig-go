@@ -1,75 +1,79 @@
-package keyutil_test
+package keyutil
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/remitly-oss/httpsig-go/keyutil"
-	"github.com/remitly-oss/httpsig-go/sigtest"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParseJWK(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   []byte
-		want    keyutil.JWK
-		wantErr string
+		Name                string
+		InputFile           string // one of InputFile or Input is used
+		Input               string
+		Expected            JWK
+		ExpectedErrContains string
 	}{
 		{
-			name:  "Valid EC JWK",
-			input: sigtest.MustReadFile("../testdata/test-jwk-ec.json"),
-			want: keyutil.JWK{
+			Name:      "Valid EC JWK",
+			InputFile: "testdata/test-jwk-ec.json",
+			Expected: JWK{
+
 				KeyType: "EC",
 				KeyID:   "test-key-ecc-p256",
 			},
 		},
 		{
-			name:  "Valid symmetric JWK",
-			input: sigtest.MustReadFile("../testdata/test-jwk-symmetric.json"),
-			want: keyutil.JWK{
+
+			Name:      "Valid symmetric JWK",
+			InputFile: "testdata/test-jwk-symmetric.json",
+			Expected: JWK{
+
 				KeyType: "oct",
 				KeyID:   "test-symmetric-key",
 			},
 		},
 		{
-			name:    "Invalid JSON",
-			input:   []byte(`{"kty": malformed`),
-			wantErr: "Failed to json parse JWK public key",
+			Name:                "Invalid JSON",
+			Input:               `{"kty": malformed`,
+			ExpectedErrContains: "parse",
 		},
 		{
-			name:    "Empty input",
-			input:   []byte{},
-			wantErr: "Failed to json parse JWK public key",
+			Name:                "Empty input",
+			Input:               "",
+			ExpectedErrContains: "parse",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := keyutil.ParseJWK(tt.input)
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Errorf("ParseJWK() error = nil, want error containing %q", tt.wantErr)
-					return
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("ParseJWK() error = %v, want error containing %q", err, tt.wantErr)
-				}
-				return
+	for _, tc := range tests {
+		t.Run(tc.Name, func(t *testing.T) {
+			var actual JWK
+			var actualErr error
+			if tc.InputFile != "" {
+				actual, actualErr = ReadJWKFile(tc.InputFile)
+			} else {
+				actual, actualErr = ReadJWK([]byte(tc.Input))
 			}
-			if err != nil {
-				t.Errorf("ParseJWK() unexpected error = %v", err)
+
+			if actualErr != nil {
+				if !strings.Contains(actualErr.Error(), tc.ExpectedErrContains) {
+					Diff(t, tc.ExpectedErrContains, actualErr.Error(), "Wrong error")
+				}
 				return
 			}
 
-			if got.KeyType != tt.want.KeyType {
-				t.Errorf("ParseJWK() KeyType = %v, want %v", got.KeyType, tt.want.KeyType)
-			}
-			if got.Algorithm != tt.want.Algorithm {
-				t.Errorf("ParseJWK() Algorithm = %v, want %v", got.Algorithm, tt.want.Algorithm)
-			}
-			if got.KeyID != tt.want.KeyID {
-				t.Errorf("ParseJWK() KeyID = %v, want %v", got.KeyID, tt.want.KeyID)
-			}
+			Diff(t, tc.Expected, actual, "Wrong JWK", cmpopts.IgnoreUnexported(JWK{}))
 		})
 	}
+}
+
+// Avoid an import cycle
+func Diff(t *testing.T, expected, actual interface{}, msg string, opts ...cmp.Option) bool {
+	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
+		t.Errorf("%s (-want +got):\n%s", msg, diff)
+		return true
+	}
+	return false
 }

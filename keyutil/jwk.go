@@ -8,9 +8,63 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 )
 
-// JWK provides basic data about the JWK
+func ReadJWKFile(jwkFile string) (JWK, error) {
+	keyBytes, err := os.ReadFile(jwkFile)
+	if err != nil {
+		return JWK{}, fmt.Errorf("Failed to read jwk key file '%s': %w", jwkFile, err)
+	}
+	return ReadJWK(keyBytes)
+}
+
+func ReadJWK(jwkBytes []byte) (JWK, error) {
+	base := jwk{}
+	err := json.Unmarshal(jwkBytes, &base)
+	if err != nil {
+		return JWK{}, fmt.Errorf("Failed to json parse JWK public key: %w", err)
+	}
+	return JWK{
+		KeyType:   base.KeyType,
+		Algorithm: base.Algo,
+		KeyID:     base.KeyID,
+		raw:       json.RawMessage(jwkBytes),
+	}, nil
+}
+
+// ReadJWKFromPEM converts a PEM encoded private key to JWK
+func ReadJWKFromPEM(pkeyBytes []byte) (JWK, error) {
+	pkey, err := ReadPrivateKey(pkeyBytes)
+	if err != nil {
+		return JWK{}, err
+	}
+	return FromPrivateKey(pkey)
+}
+
+func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
+	switch key := pkey.(type) {
+	case *ecdsa.PrivateKey:
+		jwk := jwkEC{
+			Curve: key.Curve.Params().Name,
+			X:     octet{key.X},
+			Y:     octet{key.Y},
+			D:     octet{key.D},
+		}
+		out, err := json.Marshal(jwk)
+		if err != nil {
+			return JWK{}, fmt.Errorf("Error marshalling JWK: %w", err)
+		}
+		return JWK{
+			KeyType: "EC",
+			raw:     out,
+		}, nil
+	default:
+		return JWK{}, fmt.Errorf("Unsupported private key type '%T'", pkey)
+	}
+}
+
+// JWK provides basic data and usage for a JWK.
 type JWK struct {
 	KeyType   string // 'kty'
 	Algorithm string // 'alg'
@@ -56,51 +110,6 @@ func (ji *JWK) SecretKey() ([]byte, error) {
 		return jwk.Key(), nil
 	}
 	return nil, fmt.Errorf("Unsupported key type for Secret '%s'", ji.KeyType)
-}
-
-func ParseJWK(jwkBytes []byte) (JWK, error) {
-	base := jwk{}
-	err := json.Unmarshal(jwkBytes, &base)
-	if err != nil {
-		return JWK{}, fmt.Errorf("Failed to json parse JWK public key: %w", err)
-	}
-	return JWK{
-		KeyType:   base.KeyType,
-		Algorithm: base.Algo,
-		KeyID:     base.KeyID,
-		raw:       json.RawMessage(jwkBytes),
-	}, nil
-}
-
-func FromPEM(pkeyBytes []byte) (JWK, error) {
-	pkey, err := ReadPrivateKey(pkeyBytes)
-	if err != nil {
-		return JWK{}, err
-	}
-	return FromPrivateKey(pkey)
-}
-
-func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
-	switch key := pkey.(type) {
-	case *ecdsa.PrivateKey:
-		fmt.Println("EC!!!!")
-		jwk := jwkEC{
-			Curve: key.Curve.Params().Name,
-			X:     octet{key.X},
-			Y:     octet{key.Y},
-			D:     octet{key.D},
-		}
-		out, err := json.Marshal(jwk)
-		if err != nil {
-			return JWK{}, fmt.Errorf("Error marshalling JWK: %w", err)
-		}
-		return JWK{
-			KeyType: "EC",
-			raw:     out,
-		}, nil
-	default:
-		return JWK{}, fmt.Errorf("Unsupported private key type '%T'", pkey)
-	}
 }
 
 // octet represents the data for base64 URL encoded data as specified by JWKs.

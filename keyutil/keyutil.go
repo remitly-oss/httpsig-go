@@ -1,3 +1,6 @@
+/*
+Package keyutil provides some basic PEM and JWK key handling without dependencies.  It is not meant as a replacement for a full key handling library.
+*/
 package keyutil
 
 import (
