@@ -154,7 +154,7 @@ type jwkEC struct {
 	Curve string `json:"crv"`          // The curve used with the key e.g. P-256
 	X     octet  `json:"x"`            // x coordinate of the curve.
 	Y     octet  `json:"y"`            // y coordinate of the curve.
-	D     octet  `json:"d,omit_empty"` // For private keys.
+	D     octet  `json:"d,omitempty"` // For private keys.
 }
 
 func (ec *jwkEC) params() (crv elliptic.Curve, byteLen int, e error) {
