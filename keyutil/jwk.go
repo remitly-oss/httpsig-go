@@ -146,7 +146,7 @@ func (ob *octet) UnmarshalJSON(data []byte) error {
 type jwk struct {
 	KeyType string `json:"kty"`            // kty  algorithm family used with the key such as "RSA" or "EC".
 	Algo    string `json:"alg,omitempty"` // alg identifies the algorithm intended for use with the key.
-	KeyID   string `json:"kid,omit_empty"` // Used to match a specific key
+	KeyID   string `json:"kid,omitempty"` // Used to match a specific key
 }
 
 type jwkEC struct {
