@@ -13,13 +13,16 @@ import (
 
 func TestVerify(t *testing.T) {
 	testcases := []struct {
-		Name        string
-		RequestFile string
-		Keys        httpsig.KeyFetcher
-		Expected    httpsig.VerifyResult
+		Name            string
+		RequestFile     string
+		Label           string
+		Keys            httpsig.KeyFetcher
+		Expected        httpsig.VerifyResult
+		ExpectedKeySpec httpsig.KeySpec
 	}{
 		{
 			Name:        "OneValid",
+			Label:       "sig-b21",
 			RequestFile: "verify_request1.txt",
 			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-rsa-pss": {
@@ -29,29 +32,37 @@ func TestVerify(t *testing.T) {
 				},
 			}),
 			Expected: httpsig.VerifyResult{
-				Signatures: map[string]httpsig.VerifiedSignature{
-					"sig-b21": {
-						Label: "sig-b21",
-						MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
-							httpsig.MetaKeyID:   "test-key-rsa-pss",
-							httpsig.MetaCreated: int64(1618884473),
-							httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
-						}},
-					},
+				Verified: true,
+				Label:    "sig-b21",
+				MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
+					httpsig.MetaKeyID:   "test-key-rsa-pss",
+					httpsig.MetaCreated: int64(1618884473),
+					httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
 				},
-				InvalidSignatures: map[string]httpsig.InvalidSignature{},
+				},
+			},
+			ExpectedKeySpec: httpsig.KeySpec{
+				KeyID:  "test-key-rsa-pss",
+				Algo:   httpsig.Algo_RSA_PSS_SHA512,
+				PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 			},
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(t *testing.T) {
-			actual, err := httpsig.Verify(sigtest.ReadRequest(t, tc.RequestFile), tc.Keys, httpsig.DefaultVerifyProfile)
+			actual, err := httpsig.Verify(sigtest.ReadRequest(t, tc.RequestFile), tc.Keys, httpsig.VerifyProfile{SignatureLabel: tc.Label})
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			// VerifyResult is returned even when error is also returned.
 			sigtest.Diff(t, tc.Expected, actual, "Did not match", getCmdOpts()...)
+			actualKS, err := actual.KeySpecer.KeySpec()
+			if err != nil {
+				t.Fatal(err)
+			}
+			sigtest.Diff(t, tc.ExpectedKeySpec, actualKS, "Key spec did not match")
 		})
 	}
 }
@@ -60,12 +71,14 @@ func TestVerifyInvalid(t *testing.T) {
 	testcases := []struct {
 		Name        string
 		RequestFile string
+		Label       string
 		Keys        httpsig.KeyFetcher
-		Expected    httpsig.VerifyResult
+		Expected    httpsig.ErrCode
 	}{
 		{
-			Name:        "ExtractFailure",
+			Name:        "SignatureVerificationFailure",
 			RequestFile: "verify_request2.txt",
+			Label:       "bad-sig",
 			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
 				"test-key-rsa-pss": {
 					KeyID:  "test-key-rsa-pss",
@@ -73,70 +86,36 @@ func TestVerifyInvalid(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
-			Expected: httpsig.VerifyResult{
-				Signatures: map[string]httpsig.VerifiedSignature{
-					"sig-b21": {
-						Label: "sig-b21",
-						MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
-							httpsig.MetaKeyID:   "test-key-rsa-pss",
-							httpsig.MetaCreated: int64(1618884473),
-							httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
-						}},
-					},
-				},
-				InvalidSignatures: map[string]httpsig.InvalidSignature{
-					"bad-sig": createInvalidSignature(httpsig.InvalidSignature{
-						Label:       "bad-sig",
-						HasMetadata: true,
-					}, &fixedMetadataProvider{map[httpsig.Metadata]any{
-						httpsig.MetaKeyID:   "test-key-rsa-pss",
-						httpsig.MetaCreated: int64(1618884473),
-					}}),
-				},
-			},
+			Expected: httpsig.ErrSigVerification,
 		},
 		{
-			Name:        "OneValid-OneInvalid",
+			Name:        "KeyFetchError",
 			RequestFile: "verify_request2.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
-				"test-key-rsa-pss": {
-					KeyID:  "test-key-rsa-pss",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
-					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
-				},
-			}),
-			Expected: httpsig.VerifyResult{
-				Signatures: map[string]httpsig.VerifiedSignature{
-					"sig-b21": {
-						Label: "sig-b21",
-						MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
-							httpsig.MetaKeyID:   "test-key-rsa-pss",
-							httpsig.MetaCreated: int64(1618884473),
-							httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
-						}},
-					},
-				},
-				InvalidSignatures: map[string]httpsig.InvalidSignature{
-					"bad-sig": createInvalidSignature(httpsig.InvalidSignature{
-						Label:       "bad-sig",
-						HasMetadata: true,
-					}, &fixedMetadataProvider{map[httpsig.Metadata]any{
-						httpsig.MetaKeyID:   "test-key-rsa-pss",
-						httpsig.MetaCreated: int64(1618884473),
-					}}),
-				},
-			},
+			Label:       "sig-b21",
+			Keys:        keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{}),
+			Expected:    httpsig.ErrSigKeyFetch,
+		},
+		{
+			Name:        "KeyFetchError2",
+			RequestFile: "verify_request2.txt",
+			Label:       "bad-sig",
+			Keys:        keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{}),
+			Expected:    httpsig.ErrSigKeyFetch,
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(t *testing.T) {
-			actual, err := httpsig.Verify(sigtest.ReadRequest(t, tc.RequestFile), tc.Keys, httpsig.DefaultVerifyProfile)
+			_, err := httpsig.Verify(sigtest.ReadRequest(t, tc.RequestFile), tc.Keys, httpsig.VerifyProfile{SignatureLabel: tc.Label})
+
 			if err == nil {
-				t.Fatal("Expected verify error and invalid sigature responsse")
+				t.Fatal("Expected err")
 			}
-			// VerifyResult is returned even when error is also returned.
-			sigtest.Diff(t, tc.Expected, actual, "Did not match", getCmdOpts()...)
+			if sigerr, ok := err.(*httpsig.SignatureError); ok {
+				sigtest.Diff(t, tc.Expected, sigerr.Code, "Did not match")
+			} else {
+				sigtest.Diff(t, tc.Expected, sigerr, "Did not match")
+			}
 		})
 	}
 }
@@ -204,6 +183,9 @@ func getCmdOpts() []cmp.Option {
 func TransformMeta(md httpsig.MetadataProvider) map[string]any {
 	out := map[string]any{}
 
+	if md == nil {
+		return out
+	}
 	out[string(httpsig.MetaCreated)] = metaVal(md.Created)
 	out[string(httpsig.MetaExpires)] = metaVal(md.Expires)
 	out[string(httpsig.MetaNonce)] = metaVal(md.Nonce)
@@ -211,15 +193,4 @@ func TransformMeta(md httpsig.MetadataProvider) map[string]any {
 	out[string(httpsig.MetaKeyID)] = metaVal(md.KeyID)
 	out[string(httpsig.MetaTag)] = metaVal(md.Tag)
 	return out
-}
-
-func createInvalidSignature(input httpsig.InvalidSignature, md httpsig.MetadataProvider) httpsig.InvalidSignature {
-	is := httpsig.InvalidSignature{
-		MetadataProvider: md,
-	}
-	is.Error = input.Error
-	is.HasMetadata = input.HasMetadata
-	is.Label = input.Label
-	is.Raw = input.Raw
-	return is
 }

@@ -10,7 +10,6 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
-	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -22,13 +21,13 @@ import (
 
 var (
 	DefaultVerifyProfile = VerifyProfile{
-		AllowedAlgorithms:         []Algorithm{Algo_ECDSA_P256_SHA256, Algo_ECDSA_P384_SHA384, Algo_ED25519, Algo_HMAC_SHA256},
-		RequiredFields:            DefaultRequiredFields,
-		RequiredMetadata:          []Metadata{MetaCreated, MetaKeyID},
-		DisallowedMetadata:        []Metadata{MetaAlgorithm}, // The algorithm should be looked up from the keyid not an explicit setting.
-		DisableMultipleSignatures: true,
-		CreatedValidDuration:      time.Minute * 5, // Signatures must have been created within within the last 5 minutes
-		DateFieldSkew:             time.Minute,     // If the created parameter is present, the Date header cannot be more than a minute off.
+		SignatureLabel:       DefaultSignatureLabel,
+		AllowedAlgorithms:    []Algorithm{Algo_ECDSA_P256_SHA256, Algo_ECDSA_P384_SHA384, Algo_ED25519, Algo_HMAC_SHA256},
+		RequiredFields:       DefaultRequiredFields,
+		RequiredMetadata:     []Metadata{MetaCreated, MetaKeyID},
+		DisallowedMetadata:   []Metadata{MetaAlgorithm}, // The algorithm should be looked up from the keyid not an explicit setting.
+		CreatedValidDuration: time.Minute * 5,           // Signatures must have been created within within the last 5 minutes
+		DateFieldSkew:        time.Minute,               // If the created parameter is present, the Date header cannot be more than a minute off.
 	}
 
 	// DefaultRequiredFields covers the request body with 'content-digest' the method and full URI.
@@ -71,13 +70,11 @@ type KeyFetcher interface {
 // VerifyProfile sets the parameters for a fully valid request or response.
 // A valid signature is a relatively easy accomplishment. Did the signature include all the important parts of the request? Did it use a strong enough algorithm? Was it signed 41 days ago?  There are choices to make about what constitutes a valid signed request or response beyond just a verified signature.
 type VerifyProfile struct {
+	SignatureLabel     string // Which signature this profile applies to. '*' applies to all
 	RequiredFields     []SignedField
 	RequiredMetadata   []Metadata
 	DisallowedMetadata []Metadata
 	AllowedAlgorithms  []Algorithm // Which algorithms are allowed, either from keyid meta or in the KeySpec
-	// True to only allow one signatures per message.
-	// WARNING: An attacker can DoS the requester if it has an ability to add bad signatures.
-	DisableMultipleSignatures bool
 
 	// Timing enforcement options
 	DisableTimeEnforcement       bool          // If true do no time enforcement on any fields
@@ -88,54 +85,11 @@ type VerifyProfile struct {
 
 }
 
-type VerifiedSignature struct {
-	KeySpec KeySpecer
-	Label   string // Label should not be used for the identity of the caller. Use keyid or tag instead. Label can be set by an attacker.
-	MetadataProvider
-}
-
 type VerifyResult struct {
-	Signatures map[string]VerifiedSignature // Signatures is a map of label to signature.
-
-	// InvalidSignatures is a map of label to InvalidSignature.
-	// It is provided to allow introspection of attempted verifications.
-	InvalidSignatures map[string]InvalidSignature
-}
-
-// Verified returns true if any signatures verified
-func (vr *VerifyResult) Verified() bool {
-	return len(vr.Signatures) > 0
-}
-
-// Signature is for messages with single signatures.
-// It will return the first Signature in the map of signatures.
-func (vr *VerifyResult) Signature() VerifiedSignature {
-	for _, val := range vr.Signatures {
-		return val
-	}
-	return VerifiedSignature{}
-}
-
-func (vr *VerifyResult) InvalidSignature() InvalidSignature {
-	for _, val := range vr.InvalidSignatures {
-		return val
-	}
-	return InvalidSignature{}
-}
-
-type InvalidSignature struct {
-	// Metadata is only present if the signature parsed
+	Verified  bool
+	Label     string
+	KeySpecer KeySpecer
 	MetadataProvider
-	// HasMetadata is true if the signature parsed successfully.
-	HasMetadata bool
-
-	Label string // Signature label
-	Raw   string // Raw string value of the signature
-	Error SignatureError
-}
-
-func (vr *VerifyResult) NumSignatures() int {
-	return len(vr.Signatures)
 }
 
 type Verifier struct {
@@ -165,7 +119,8 @@ func NewVerifier(kf KeyFetcher, profile VerifyProfile) (*Verifier, error) {
 		return nil, newError(ErrSigKeyFetch, "KeyFetcher cannot be nil")
 	}
 	return &Verifier{
-		keys: kf,
+		keys:    kf,
+		profile: profile,
 	}, nil
 }
 
@@ -184,98 +139,54 @@ func (ver *Verifier) VerifyResponse(resp *http.Response) (VerifyResult, error) {
 	})
 }
 
+// verify verifies the request or response.
 func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
-	vres := VerifyResult{
-		Signatures:        map[string]VerifiedSignature{},
-		InvalidSignatures: map[string]InvalidSignature{},
-	}
+	vr := VerifyResult{}
 
 	/* calculate content digest if needed */
 	if hrr.Headers().Get("Content-Digest") != "" {
 		digestAlgo, expectedDigest, err := getSupportedDigestFromHeader(hrr.Headers().Values("Content-Digest"))
 		if err != nil {
-			return vres, err
+			return vr, err
 		}
 
 		di, err := digestBody(digestAlgo, hrr.Body())
 		if err != nil {
-			return vres, err
+			return vr, err
 		}
 		hrr.SetBody(di.NewBody)
 		if !bytes.Equal(expectedDigest, di.Digest) {
-			return vres, newError(ErrNoSigWrongDigest, "Digest does not match")
+			return vr, newError(ErrNoSigWrongDigest, "Digest does not match")
 		}
 	}
 
-	/* extract signatures */
-	sigs, err := extractSignatures(hrr.Headers())
+	/* parse and extract the signature */
+	sigsfv, err := parseSignaturesFromRequest(hrr.Headers())
 	if err != nil {
-		return vres, err
+		return vr, err
 	}
 
-	if len(sigs.sigs) == 0 {
-		return vres, newError(ErrNoSigMissingSignature, "No signatures found in request")
+	sig, err := unmarshalSignature(sigsfv, ver.profile.SignatureLabel)
+	if err != nil {
+		return vr, err
+	}
+	vr.MetadataProvider = sig.Input.MetadataValues
+
+	/* verify and validate */
+	keyspec, err := ver.verifySignature(hrr, sig)
+	if err != nil {
+		return vr, err
 	}
 
-	/* verify signatures */
-	var lasterr error
-	for _, sig := range sigs.sigs {
-		keyspec, vererr := ver.verifySignature(hrr, sig)
-		if vererr != nil {
-			vres.InvalidSignatures[sig.Label] = InvalidSignature{
-				Label:            sig.Label,
-				Raw:              "",
-				Error:            toSigError(vererr),
-				HasMetadata:      true,
-				MetadataProvider: sig.Input.MetadataValues,
-			}
-			lasterr = vererr
-			continue
-		}
-
-		/* validate against profile */
-		if valerr := ver.profile.validate(sig); valerr != nil {
-			vres.InvalidSignatures[sig.Label] = InvalidSignature{
-				Label:            sig.Label,
-				Raw:              "",
-				Error:            toSigError(valerr),
-				HasMetadata:      true,
-				MetadataProvider: sig.Input.MetadataValues,
-			}
-			lasterr = valerr
-		}
-		// Verified and validated
-		vres.Signatures[sig.Label] = VerifiedSignature{
-			Label:            sig.Label,
-			KeySpec:          keyspec,
-			MetadataProvider: sig.Input.MetadataValues,
-		}
+	if err := ver.profile.validate(sig); err != nil {
+		return vr, err
 	}
 
-	for label, badsig := range sigs.invalidSignatures {
-		vres.InvalidSignatures[label] = InvalidSignature{
-			Label:       label,
-			Raw:         "",
-			Error:       badsig,
-			HasMetadata: false,
-		}
-	}
-
-	return vres, lasterr
-}
-
-func toSigError(err error) SignatureError {
-	var sigError *SignatureError
-	if errors.As(err, &sigError) {
-		return *sigError
-	}
-	sigError = newError(ErrSigInvalidSignature, "Generic invalid signature", err)
-	return *sigError
-}
-
-type extractedSignatures struct {
-	sigs              []extractedSignature
-	invalidSignatures map[string]SignatureError // map[signature label]reason
+	return VerifyResult{
+		Verified:         true,
+		KeySpecer:        keyspec,
+		MetadataProvider: sig.Input.MetadataValues,
+	}, nil
 }
 
 type extractedSignature struct {
@@ -284,93 +195,95 @@ type extractedSignature struct {
 	Input     sigBaseInput
 }
 
-func extractSignatures(headers http.Header) (extractedSignatures, error) {
-	extracted := extractedSignatures{
-		sigs:              []extractedSignature{},
-		invalidSignatures: map[string]SignatureError{},
-	}
+// signaturesSFV is the structured field value representation of all the signatures of a request.
+type signaturesSFV struct {
+	SigInputs *sfv.Dictionary
+	Sigs      *sfv.Dictionary
+}
+
+func parseSignaturesFromRequest(headers http.Header) (signaturesSFV, error) {
+	psd := signaturesSFV{}
 	/* Pull signature and signature-input header */
 	sigHeader := headers.Get("signature")
 	if sigHeader == "" {
-		return extracted, newError(ErrNoSigMissingSignature, "Missing signature header")
+		return psd, newError(ErrNoSigMissingSignature, "Missing signature header")
 	}
 	sigInputHeader := headers.Get("signature-input")
 	if sigInputHeader == "" {
-		return extracted, newError(ErrNoSigMissingSignature, "Missing signature-input header")
+		return psd, newError(ErrNoSigMissingSignature, "Missing signature-input header")
 	}
 
 	/* Parse headers into their appropriate HTTP structured field values */
 	// signature-input must be a HTTP structured field value of type Dictionary.
-	sigInputDict, err := sfv.UnmarshalDictionary([]string{sigInputHeader})
+	var err error
+	psd.SigInputs, err = sfv.UnmarshalDictionary([]string{sigInputHeader})
 	if err != nil {
-		return extracted, newError(ErrNoSigInvalidSignature, "Invalid signature-input header. Not a valid Dictionary", err)
+		return psd, newError(ErrNoSigInvalidSignature, "Invalid signature-input header. Not a valid Dictionary", err)
 	}
 	// signature must be a HTTP structured field value of type Dictionary.
-	sigDict, err := sfv.UnmarshalDictionary([]string{sigHeader})
+	psd.Sigs, err = sfv.UnmarshalDictionary([]string{sigHeader})
 	if err != nil {
-		return extracted, newError(ErrNoSigInvalidSignature, "Invalid signature header. Not a valid Dictionary", err)
+		return psd, newError(ErrNoSigInvalidSignature, "Invalid signature header. Not a valid Dictionary", err)
+	}
+	return psd, nil
+}
+
+// unmarshalSignature unmarshals a signature from hhtp structured field value (sfv) format.
+func unmarshalSignature(sigs signaturesSFV, label string) (extractedSignature, error) {
+	sigInfo := extractedSignature{
+		Label: label,
 	}
 
-	/* Process each signature  */
-	for _, sigLabel := range sigDict.Names() {
-		sigInfo := extractedSignature{
-			Label: sigLabel,
-		}
-
-		sigMember, _ := sigDict.Get(sigLabel)
-
-		// The signature must be of sfv type 'Item'
-		sigItem, isItem := sigMember.(sfv.Item)
-		if !isItem {
-			extracted.invalidSignatures[sigLabel] = (*newError(ErrSigInvalidSignature, fmt.Sprintf("The signature for label '%s' must be type Item. It was type %T", sigLabel, sigMember)))
-			continue
-		}
-		// Signatures must be byte sequences. The sfv library uses []byte for byte sequences.
-		sigBytes, isByteSequence := sigItem.Value.([]byte)
-		if !isByteSequence {
-			extracted.invalidSignatures[sigLabel] = (*newError(ErrSigInvalidSignature, fmt.Sprintf("The signature for label '%s' was not a byte sequence. It was type %T", sigLabel, sigItem.Value)))
-			continue
-		}
-		sigInfo.Signature = sigBytes
-
-		// Grab the corresponding signature input
-		sigInputMember, hasInput := sigInputDict.Get(sigLabel)
-		if !hasInput {
-			extracted.invalidSignatures[sigLabel] = (*newError(ErrSigInvalidSignature, fmt.Sprintf("The signature-input for label '%s' is not present", sigLabel)))
-			continue
-		}
-
-		// The signature input must be of sfv type InnerList
-		sigInputList, isList := sigInputMember.(sfv.InnerList)
-		if !isList {
-			extracted.invalidSignatures[sigLabel] = (*newError(ErrSigInvalidSignature, fmt.Sprintf("The signature-input for label '%s' must be type InnerList. It was type '%T'.", sigLabel, sigInputMember)))
-			continue
-		}
-		cIDs := []componentID{}
-		for _, componentItem := range sigInputList.Items {
-			name, ok := componentItem.Value.(string)
-			if !ok {
-				extracted.invalidSignatures[sigLabel] = (*newError(ErrSigInvalidSignature, fmt.Sprintf("signature components must be string types")))
-				continue
-			}
-			cIDs = append(cIDs, componentID{
-				Name: name,
-				Item: componentItem,
-			})
-		}
-		mds := []Metadata{}
-		for _, name := range sigInputList.Params.Names() {
-			mds = append(mds, Metadata(name))
-		}
-		sigInfo.Input = sigBaseInput{
-			Components:     cIDs,
-			MetadataParams: mds,
-			MetadataValues: metadataProviderFromParams{sigInputList.Params},
-		}
-		extracted.sigs = append(extracted.sigs, sigInfo)
+	sigMember, found := sigs.Sigs.Get(label)
+	if !found {
+		return sigInfo, newError(ErrNoSigMissingSignature, fmt.Sprintf("The signature for label '%s' not found", label))
+	}
+	sigInputMember, found := sigs.SigInputs.Get(label)
+	if !found {
+		return sigInfo, newError(ErrNoSigMissingSignature, fmt.Sprintf("The signature-input for label '%s' not found", label))
 	}
 
-	return extracted, nil
+	// The signature must be of sfv type 'Item'
+	sigItem, isItem := sigMember.(sfv.Item)
+	if !isItem {
+		return sigInfo, newError(ErrSigInvalidSignature, fmt.Sprintf("The signature for label '%s' must be type Item. It was type %T", label, sigMember))
+	}
+	// Signatures must be byte sequences. The sfv library uses []byte for byte sequences.
+	sigBytes, isByteSequence := sigItem.Value.([]byte)
+	if !isByteSequence {
+		return sigInfo, newError(ErrSigInvalidSignature, fmt.Sprintf("The signature for label '%s' was not a byte sequence. It was type %T", label, sigItem.Value))
+
+	}
+	sigInfo.Signature = sigBytes
+
+	// The signature input must be of sfv type InnerList
+	sigInputList, isList := sigInputMember.(sfv.InnerList)
+	if !isList {
+		return sigInfo, newError(ErrSigInvalidSignature, fmt.Sprintf("The signature-input for label '%s' must be type InnerList. It was type '%T'.", label, sigInputMember))
+
+	}
+	cIDs := []componentID{}
+	for _, componentItem := range sigInputList.Items {
+		name, ok := componentItem.Value.(string)
+		if !ok {
+			return sigInfo, newError(ErrSigInvalidSignature, fmt.Sprintf("signature components must be string types"))
+		}
+		cIDs = append(cIDs, componentID{
+			Name: name,
+			Item: componentItem,
+		})
+	}
+	mds := []Metadata{}
+	for _, name := range sigInputList.Params.Names() {
+		mds = append(mds, Metadata(name))
+	}
+	sigInfo.Input = sigBaseInput{
+		Components:     cIDs,
+		MetadataParams: mds,
+		MetadataValues: metadataProviderFromParams{sigInputList.Params},
+	}
+
+	return sigInfo, nil
 }
 
 func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) (KeySpecer, error) {

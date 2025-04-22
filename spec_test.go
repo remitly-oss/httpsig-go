@@ -95,7 +95,9 @@ func TestSpecVerify(t *testing.T) {
 			ver, err := NewVerifier(&fixedKeyFetch{
 				requiredKeyID: tc.Key.KeyID,
 				key:           tc.Key,
-			}, VerifyProfile{})
+			}, VerifyProfile{
+				SignatureLabel: fmt.Sprintf("sig-%s", tc.Name),
+			})
 
 			var verifyErr error
 			if tc.IsResponse {
