@@ -202,7 +202,7 @@ func (ec *jwkEC) PrivateKey() (*ecdsa.PrivateKey, error) {
 	}
 
 	if len(ec.D.Bytes()) != byteLen {
-		return nil, fmt.Errorf("Y coordinate must be %d byte length for curve '%s'. Got '%d'", byteLen, ec.Curve, len(ec.D.Bytes()))
+		return nil, fmt.Errorf("D coordinate must be %d byte length for curve '%s'. Got '%d'", byteLen, ec.Curve, len(ec.D.Bytes()))
 	}
 
 	return &ecdsa.PrivateKey{
