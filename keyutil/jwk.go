@@ -139,21 +139,20 @@ func (ob *octet) UnmarshalJSON(data []byte) error {
 	x.SetBytes(rawBytes)
 	*ob = octet{x}
 
-	fmt.Printf("Decoded string '%s' into '%d' bytes and bitlen '%d' and bytes '%d'\n", encoded, len(rawBytes), x.BitLen(), len(x.Bytes()))
 	return nil
 }
 
 type jwk struct {
-	KeyType string `json:"kty"`            // kty  algorithm family used with the key such as "RSA" or "EC".
+	KeyType string `json:"kty"`           // kty  algorithm family used with the key such as "RSA" or "EC".
 	Algo    string `json:"alg,omitempty"` // alg identifies the algorithm intended for use with the key.
 	KeyID   string `json:"kid,omitempty"` // Used to match a specific key
 }
 
 type jwkEC struct {
 	jwk
-	Curve string `json:"crv"`          // The curve used with the key e.g. P-256
-	X     octet  `json:"x"`            // x coordinate of the curve.
-	Y     octet  `json:"y"`            // y coordinate of the curve.
+	Curve string `json:"crv"`         // The curve used with the key e.g. P-256
+	X     octet  `json:"x"`           // x coordinate of the curve.
+	Y     octet  `json:"y"`           // y coordinate of the curve.
 	D     octet  `json:"d,omitempty"` // For private keys.
 }
 
