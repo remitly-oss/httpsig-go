@@ -70,6 +70,30 @@ func TestParseJWK(t *testing.T) {
 }
 
 // Avoid an import cycle
+func TestJWKMarshalRoundTrip(t *testing.T) {
+	tests := []struct {
+		name                string
+		inputFile           string
+		expectedErrContains string
+	}{
+		{
+			name:      "EC Key Round Trip",
+			inputFile: "testdata/test-jwk-ec.json",
+		},
+		{
+			name:      "Symmetric Key Round Trip",
+			inputFile: "testdata/test-jwk-symmetric.json",
+		},
+	}
+
+	// Test cases will be implemented in next step
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Implementation will be added in next step
+		})
+	}
+}
+
 func Diff(t *testing.T, expected, actual interface{}, msg string, opts ...cmp.Option) bool {
 	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
 		t.Errorf("%s (-want +got):\n%s", msg, diff)

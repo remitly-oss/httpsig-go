@@ -46,6 +46,9 @@ func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 	switch key := pkey.(type) {
 	case *ecdsa.PrivateKey:
 		jwk := jwkEC{
+			jwk: jwk{
+				KeyType: "EC",
+			},
 			Curve: key.Curve.Params().Name,
 			X:     octet{key.X},
 			Y:     octet{key.Y},
@@ -144,16 +147,16 @@ func (ob *octet) UnmarshalJSON(data []byte) error {
 }
 
 type jwk struct {
-	KeyType string `json:"kty"`            // kty  algorithm family used with the key such as "RSA" or "EC".
+	KeyType string `json:"kty"`           // kty  algorithm family used with the key such as "RSA" or "EC".
 	Algo    string `json:"alg,omitempty"` // alg identifies the algorithm intended for use with the key.
 	KeyID   string `json:"kid,omitempty"` // Used to match a specific key
 }
 
 type jwkEC struct {
 	jwk
-	Curve string `json:"crv"`          // The curve used with the key e.g. P-256
-	X     octet  `json:"x"`            // x coordinate of the curve.
-	Y     octet  `json:"y"`            // y coordinate of the curve.
+	Curve string `json:"crv"`         // The curve used with the key e.g. P-256
+	X     octet  `json:"x"`           // x coordinate of the curve.
+	Y     octet  `json:"y"`           // y coordinate of the curve.
 	D     octet  `json:"d,omitempty"` // For private keys.
 }
 
