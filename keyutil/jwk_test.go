@@ -89,7 +89,32 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 	// Test cases will be implemented in next step
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Implementation will be added in next step
+			// Read initial JWK from test file
+			original, err := ReadJWKFile(tc.inputFile)
+			if err != nil {
+				if tc.expectedErrContains != "" {
+					if !strings.Contains(err.Error(), tc.expectedErrContains) {
+						t.Errorf("Expected error containing %q, got: %v", tc.expectedErrContains, err)
+					}
+					return
+				}
+				t.Fatalf("Failed to read JWK file: %v", err)
+			}
+
+			// Marshal JWK to JSON
+			jsonBytes, err := original.MarshalJSON()
+			if err != nil {
+				t.Fatalf("Failed to marshal JWK: %v", err)
+			}
+
+			// Unmarshal back to new JWK
+			roundTripped, err := ReadJWK(jsonBytes)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal round-tripped JWK: %v", err)
+			}
+
+			// Compare original and round-tripped JWKs
+			Diff(t, original, roundTripped, "Round-tripped JWK differs from original", cmpopts.IgnoreUnexported(JWK{}))
 		})
 	}
 }
