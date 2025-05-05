@@ -180,14 +180,21 @@ func FuzzExtractSignatures(f *testing.F) {
 
 		req.Header.Set("signature", sigHeader)
 		req.Header.Set("signature-input", sigInputHeader)
-		_, err = extractSignatures(req.Header)
+
+		sigSFV, err := parseSignaturesFromRequest(req.Header)
 		if err != nil {
-			if _, ok := err.(*SignatureError); ok {
-				// Handled error
-				return
+			return
+		}
+		for _, label := range sigSFV.Sigs.Names() {
+			_, err = unmarshalSignature(sigSFV, label)
+			if err != nil {
+				if _, ok := err.(*SignatureError); ok {
+					// Handled error
+					return
+				}
+				// Unhandled error
+				t.Error(err)
 			}
-			// Unhandled error
-			t.Error(err)
 		}
 	})
 }
