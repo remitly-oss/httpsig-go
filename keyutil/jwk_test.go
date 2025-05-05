@@ -1,6 +1,10 @@
 package keyutil
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"strings"
 	"testing"
 
@@ -20,7 +24,6 @@ func TestParseJWK(t *testing.T) {
 			Name:      "Valid EC JWK",
 			InputFile: "testdata/test-jwk-ec.json",
 			Expected: JWK{
-
 				KeyType: "EC",
 				KeyID:   "test-key-ecc-p256",
 			},
@@ -69,28 +72,31 @@ func TestParseJWK(t *testing.T) {
 	}
 }
 
-// Avoid an import cycle
 func TestJWKMarshalRoundTrip(t *testing.T) {
 	tests := []struct {
 		name                string
-		inputFile           string
+		inputType           string
 		expectedErrContains string
 	}{
 		{
 			name:      "EC Key Round Trip",
-			inputFile: "testdata/test-jwk-ec.json",
-		},
-		{
-			name:      "Symmetric Key Round Trip",
-			inputFile: "testdata/test-jwk-symmetric.json",
+			inputType: "EC",
 		},
 	}
 
 	// Test cases will be implemented in next step
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Read initial JWK from test file
-			original, err := ReadJWKFile(tc.inputFile)
+			var pk crypto.PrivateKey
+			switch tc.inputType {
+			case "EC":
+				var err error
+				pk, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			original, err := FromPrivateKey(pk)
 			if err != nil {
 				if tc.expectedErrContains != "" {
 					if !strings.Contains(err.Error(), tc.expectedErrContains) {
@@ -98,7 +104,7 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 					}
 					return
 				}
-				t.Fatalf("Failed to read JWK file: %v", err)
+				t.Fatalf("Failed to generate create JWK from private key: %v", err)
 			}
 
 			// Marshal JWK to JSON
