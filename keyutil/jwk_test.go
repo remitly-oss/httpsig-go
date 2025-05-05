@@ -1,6 +1,10 @@
 package keyutil
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"strings"
 	"testing"
 
@@ -20,7 +24,6 @@ func TestParseJWK(t *testing.T) {
 			Name:      "Valid EC JWK",
 			InputFile: "testdata/test-jwk-ec.json",
 			Expected: JWK{
-
 				KeyType: "EC",
 				KeyID:   "test-key-ecc-p256",
 			},
@@ -69,7 +72,58 @@ func TestParseJWK(t *testing.T) {
 	}
 }
 
-// Avoid an import cycle
+func TestJWKMarshalRoundTrip(t *testing.T) {
+	tests := []struct {
+		name                string
+		inputType           string
+		expectedErrContains string
+	}{
+		{
+			name:      "EC Key Round Trip",
+			inputType: "EC",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var pk crypto.PrivateKey
+			switch tc.inputType {
+			case "EC":
+				var err error
+				pk, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			original, err := FromPrivateKey(pk)
+			if err != nil {
+				if tc.expectedErrContains != "" {
+					if !strings.Contains(err.Error(), tc.expectedErrContains) {
+						t.Errorf("Expected error containing %q, got: %v", tc.expectedErrContains, err)
+					}
+					return
+				}
+				t.Fatalf("Failed to generate create JWK from private key: %v", err)
+			}
+
+			// Marshal JWK to JSON
+			jsonBytes, err := original.MarshalJSON()
+			if err != nil {
+				t.Fatalf("Failed to marshal JWK: %v", err)
+			}
+
+			// Unmarshal back to new JWK
+			roundTripped, err := ReadJWK(jsonBytes)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal round-tripped JWK: %v", err)
+			}
+
+			// Compare original and round-tripped JWKs
+			Diff(t, original, roundTripped, "Round-tripped JWK differs from original", cmpopts.IgnoreUnexported(JWK{}))
+		})
+	}
+}
+
 func Diff(t *testing.T, expected, actual interface{}, msg string, opts ...cmp.Option) bool {
 	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
 		t.Errorf("%s (-want +got):\n%s", msg, diff)

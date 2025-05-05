@@ -46,6 +46,9 @@ func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 	switch key := pkey.(type) {
 	case *ecdsa.PrivateKey:
 		jwk := jwkEC{
+			jwk: jwk{
+				KeyType: "EC",
+			},
 			Curve: key.Curve.Params().Name,
 			X:     octet{key.X},
 			Y:     octet{key.Y},
