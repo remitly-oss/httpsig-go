@@ -42,7 +42,7 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
-			Profile: httpsig.DefaultVerifyProfile,
+			Profile: createVerifyProfile("tst-rsa-pss"),
 		},
 		{
 			Name:       "RSA-v15",
@@ -62,7 +62,7 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/key-rsa-v15.pub"),
 				},
 			}),
-			Profile: httpsig.DefaultVerifyProfile,
+			Profile: createVerifyProfile("tst-rsa-pss"),
 		},
 		{
 			Name:      "HMAC_SHA256",
@@ -81,7 +81,7 @@ func TestRoundTrip(t *testing.T) {
 					Secret: sigtest.MustReadFile("testdata/test-shared-secret"),
 				},
 			}),
-			Profile: httpsig.DefaultVerifyProfile,
+			Profile: createVerifyProfile("sig1"),
 		},
 		{
 			Name:       "ECDSA-p265",
@@ -101,7 +101,7 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
 				},
 			}),
-			Profile: httpsig.DefaultVerifyProfile,
+			Profile: createVerifyProfile("tst-ecdsa"),
 		},
 		{
 			Name:       "ECDSA-p384",
@@ -121,7 +121,7 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p384.pub"),
 				},
 			}),
-			Profile: httpsig.DefaultVerifyProfile,
+			Profile: createVerifyProfile("tst-ecdsa"),
 		},
 		{
 			Name:       "ED25519",
@@ -141,7 +141,7 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
 				},
 			}),
-			Profile: httpsig.DefaultVerifyProfile,
+			Profile: createVerifyProfile("tst-ed"),
 		},
 		{
 			Name:       "BadDigest",
@@ -162,7 +162,7 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
 				},
 			}),
-			Profile:               httpsig.DefaultVerifyProfile,
+			Profile:               createVerifyProfile("tst-content-digest"),
 			ExpectedErrCodeVerify: httpsig.ErrNoSigWrongDigest,
 		},
 	}
@@ -208,4 +208,10 @@ func TestRoundTrip(t *testing.T) {
 		})
 
 	}
+}
+
+func createVerifyProfile(label string) httpsig.VerifyProfile {
+	vp := httpsig.DefaultVerifyProfile
+	vp.SignatureLabel = label
+	return vp
 }
