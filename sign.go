@@ -146,7 +146,7 @@ func (s *Signer) Sign(req *http.Request) error {
 			Algo:       s.profile.Algorithm,
 			PrivateKey: s.skey.Key,
 			Secret:     s.skey.Secret,
-			Label:      DefaultSignatureLabel,
+			Label:      s.profile.Label,
 		})
 }
 
@@ -165,7 +165,7 @@ func (s *Signer) SignResponse(resp *http.Response) error {
 			Algo:       s.profile.Algorithm,
 			PrivateKey: s.skey.Key,
 			Secret:     s.skey.Secret,
-			Label:      DefaultSignatureLabel,
+			Label:      s.profile.Label,
 		})
 }
 
