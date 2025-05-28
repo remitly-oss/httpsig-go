@@ -77,10 +77,12 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 		name                string
 		inputType           string
 		expectedErrContains string
+		keyid               string
 	}{
 		{
 			name:      "EC Key Round Trip",
 			inputType: "EC",
+			keyid:     "mykey_123",
 		},
 	}
 
@@ -95,7 +97,10 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			original, err := FromPrivateKey(pk)
+			original, err := FromPrivateKey(JWK{
+				KeyID: tc.keyid,
+			}, pk)
+
 			if err != nil {
 				if tc.expectedErrContains != "" {
 					if !strings.Contains(err.Error(), tc.expectedErrContains) {
@@ -120,11 +125,12 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 
 			// Compare original and round-tripped JWKs
 			Diff(t, original, roundTripped, "Round-tripped JWK differs from original", cmpopts.IgnoreUnexported(JWK{}))
+			Diff(t, tc.keyid, roundTripped.KeyID, "Round-tripped JWK differs from original", cmpopts.IgnoreUnexported(JWK{}))
 		})
 	}
 }
 
-func Diff(t *testing.T, expected, actual interface{}, msg string, opts ...cmp.Option) bool {
+func Diff(t *testing.T, expected, actual any, msg string, opts ...cmp.Option) bool {
 	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
 		t.Errorf("%s (-want +got):\n%s", msg, diff)
 		return true
