@@ -33,21 +33,24 @@ func ReadJWK(jwkBytes []byte) (JWK, error) {
 	}, nil
 }
 
-// ReadJWKFromPEM converts a PEM encoded private key to JWK
-func ReadJWKFromPEM(pkeyBytes []byte) (JWK, error) {
+// ReadJWKFromPEM converts a PEM encoded private key to JWK. Use 'fields' to set additional fields like kty, and kid. alg is set based on the passed in PrivateKey.
+func ReadJWKFromPEM(fields JWK, pkeyBytes []byte) (JWK, error) {
 	pkey, err := ReadPrivateKey(pkeyBytes)
 	if err != nil {
 		return JWK{}, err
 	}
-	return FromPrivateKey(pkey)
+	return FromPrivateKey(fields, pkey)
 }
 
-func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
+// FromPrivateKey creates a JWK from a crypto.PrivateKey. Use 'fields' to set additional fields like kty, and kid. alg is set based on the passed in PrivateKey.
+func FromPrivateKey(fields JWK, pkey crypto.PrivateKey) (JWK, error) {
 	switch key := pkey.(type) {
 	case *ecdsa.PrivateKey:
 		jwk := jwkEC{
 			jwk: jwk{
 				KeyType: "EC",
+				Algo:    fields.Algorithm,
+				KeyID:   fields.KeyID,
 			},
 			Curve: key.Curve.Params().Name,
 			X:     octet{key.X},
@@ -59,8 +62,10 @@ func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 			return JWK{}, fmt.Errorf("Error marshalling JWK: %w", err)
 		}
 		return JWK{
-			KeyType: "EC",
-			raw:     out,
+			KeyType:   "EC",
+			Algorithm: fields.Algorithm,
+			KeyID:     fields.KeyID,
+			raw:       out,
 		}, nil
 	default:
 		return JWK{}, fmt.Errorf("Unsupported private key type '%T'", pkey)
