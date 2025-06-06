@@ -54,7 +54,6 @@ func sign(hrr httpMessage, sp sigParameters) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("SIGN SIG BASE '%s'\n", string(base.base))
 
 	var sigBytes []byte
 	switch sp.Algo {

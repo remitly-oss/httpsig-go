@@ -96,7 +96,6 @@ type VerifyResult struct {
 
 type VerifyDebugInfo struct {
 	SignatureBase string // The signature base derived from the request.
-
 }
 
 type Verifier struct {
