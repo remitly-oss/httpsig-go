@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -78,11 +79,13 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 		inputType           string
 		expectedErrContains string
 		keyid               string
+		algorithm           string
 	}{
 		{
 			name:      "EC Key Round Trip",
 			inputType: "EC",
 			keyid:     "mykey_123",
+			algorithm: "myalgo",
 		},
 	}
 
@@ -97,10 +100,10 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			original, err := FromPrivateKey(JWK{
-				KeyID: tc.keyid,
-			}, pk)
 
+			original, err := FromPrivateKey(pk)
+			original.KeyID = tc.keyid
+			original.Algorithm = tc.algorithm
 			if err != nil {
 				if tc.expectedErrContains != "" {
 					if !strings.Contains(err.Error(), tc.expectedErrContains) {
@@ -112,7 +115,7 @@ func TestJWKMarshalRoundTrip(t *testing.T) {
 			}
 
 			// Marshal JWK to JSON
-			jsonBytes, err := original.MarshalJSON()
+			jsonBytes, err := json.Marshal(original)
 			if err != nil {
 				t.Fatalf("Failed to marshal JWK: %v", err)
 			}

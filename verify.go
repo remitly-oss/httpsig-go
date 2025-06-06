@@ -33,6 +33,8 @@ var (
 	// DefaultRequiredFields covers the request body with 'content-digest' the method and full URI.
 	// As per the specification Date is not covered in favor of using the 'created' metadata parameter.
 	DefaultRequiredFields = Fields("content-digest", "@method", "@target-uri")
+
+	ctxKeyAddDebug = struct{}{}
 )
 
 // KeySpec is the per-key information needed to verify a signature.
@@ -82,14 +84,19 @@ type VerifyProfile struct {
 	CreatedValidDuration         time.Duration // Duration allowed for between time.Now and the created time
 	ExpiredSkew                  time.Duration // Maximum duration allowed between time.Now and the expired time
 	DateFieldSkew                time.Duration // Maximum duration allowed between Date field and created
-
 }
 
 type VerifyResult struct {
 	Verified  bool
 	Label     string
 	KeySpecer KeySpecer
+	DebugInfo VerifyDebugInfo // Present if the verifier debug flag is set and the signature was valid.
 	MetadataProvider
+}
+
+type VerifyDebugInfo struct {
+	SignatureBase string // The signature base derived from the request.
+
 }
 
 type Verifier struct {
@@ -170,10 +177,22 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 	if err != nil {
 		return vr, err
 	}
+	vr.Label = sig.Label
 	vr.MetadataProvider = sig.Input.MetadataValues
 
 	/* verify and validate */
-	keyspec, err := ver.verifySignature(hrr, sig)
+	base, err := calculateSignatureBase(hrr, sig.Input)
+	if err != nil {
+		return vr, err
+	}
+
+	if hrr.isDebug() {
+		vr.DebugInfo = VerifyDebugInfo{
+			SignatureBase: string(base.base),
+		}
+	}
+	keyspec, err := ver.verifySignature(hrr, sig, base)
+	vr.KeySpecer = keyspec
 	if err != nil {
 		return vr, err
 	}
@@ -184,8 +203,10 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 
 	return VerifyResult{
 		Verified:         true,
+		Label:            sig.Label,
 		KeySpecer:        keyspec,
 		MetadataProvider: sig.Input.MetadataValues,
+		DebugInfo:        vr.DebugInfo,
 	}, nil
 }
 
@@ -286,14 +307,10 @@ func unmarshalSignature(sigs signaturesSFV, label string) (extractedSignature, e
 	return sigInfo, nil
 }
 
-func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature) (KeySpecer, error) {
-	base, err := calculateSignatureBase(r, sig.Input)
-	if err != nil {
-		return nil, err
-	}
-
+func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base signatureBase) (KeySpecer, error) {
 	var specer KeySpecer
 	var ks KeySpec
+	var err error
 	// Get keyspec
 	if slices.Contains(sig.Input.MetadataParams, MetaKeyID) {
 		keyid, err := sig.Input.MetadataValues.KeyID()
@@ -453,4 +470,8 @@ func (mp metadataProviderFromParams) Tag() (string, error) {
 		return val.(string), nil
 	}
 	return "", fmt.Errorf("No tag value")
+}
+
+func SetAddDebugInfo(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKeyAddDebug, true)
 }
