@@ -42,14 +42,14 @@ func ReadJWK(jwkBytes []byte) (JWK, error) {
 		if err != nil {
 			return JWK{}, fmt.Errorf("Failed to json parse JWK: %w", err)
 		}
-		jwk.jtype = jec
+		jwk.jwtImpl = jec
 	case KeyTypeOct:
 		jsym := jwkSymmetric{}
 		err := json.Unmarshal(jwkBytes, &jsym)
 		if err != nil {
 			return JWK{}, fmt.Errorf("Failed to json parse JWK: %w", err)
 		}
-		jwk.jtype = jsym
+		jwk.jwtImpl = jsym
 	default:
 		return JWK{}, fmt.Errorf("Unsupported key type/kty - '%s'", base.KeyType)
 	}
@@ -57,7 +57,7 @@ func ReadJWK(jwkBytes []byte) (JWK, error) {
 	return jwk, nil
 }
 
-// ReadJWKFromPEM converts a PEM encoded private key to JWK. Use 'fields' to set additional fields like kty, and kid. alg is set based on the passed in PrivateKey.
+// ReadJWKFromPEM converts a PEM encoded private key to JWK. 'kty' is set based on the passed in PrivateKey type.
 func ReadJWKFromPEM(pkeyBytes []byte) (JWK, error) {
 	pkey, err := ReadPrivateKey(pkeyBytes)
 	if err != nil {
@@ -66,7 +66,7 @@ func ReadJWKFromPEM(pkeyBytes []byte) (JWK, error) {
 	return FromPrivateKey(pkey)
 }
 
-// FromPrivateKey creates a JWK from a crypto.PrivateKey. Use 'fields' to set additional fields like kty, and kid. alg is set based on the passed in PrivateKey.
+// FromPrivateKey creates a JWK from a crypto.PrivateKey. 'kty' is set based on the passed in PrivateKey.
 func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 	switch key := pkey.(type) {
 	case *ecdsa.PrivateKey:
@@ -82,7 +82,7 @@ func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 
 		return JWK{
 			KeyType: KeyTypeEC,
-			jtype:   jec,
+			jwtImpl: jec,
 		}, nil
 	default:
 		return JWK{}, fmt.Errorf("Unsupported private key type '%T'", pkey)
@@ -91,16 +91,17 @@ func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 
 // JWK provides basic data and usage for a JWK.
 type JWK struct {
+	// Common fields are duplicated as struct members for better usability.
 	KeyType   string // 'kty' - "EC", "RSA", "oct"
 	Algorithm string // 'alg'
 	KeyID     string // 'kid'
-	jtype     any    // the type of JWK based on KeyType.
+	jwtImpl   any    // the specific implementation of JWK based on KeyType.
 }
 
 func (ji *JWK) PublicKey() (crypto.PublicKey, error) {
 	switch ji.KeyType {
 	case ji.KeyType: // ECC
-		if jec, ok := ji.jtype.(jwkEC); ok {
+		if jec, ok := ji.jwtImpl.(jwkEC); ok {
 			return jec.PublicKey()
 		}
 	}
@@ -111,7 +112,7 @@ func (ji *JWK) PublicKey() (crypto.PublicKey, error) {
 func (ji *JWK) PublicKeyJWK() (JWK, error) {
 	switch ji.KeyType {
 	case KeyTypeEC:
-		if jec, ok := ji.jtype.(jwkEC); ok {
+		if jec, ok := ji.jwtImpl.(jwkEC); ok {
 			jec.jwk.Algo = ji.Algorithm
 			jec.jwk.KeyID = ji.KeyID
 			return jec.PublicKeyJWK()
@@ -124,7 +125,7 @@ func (ji *JWK) PublicKeyJWK() (JWK, error) {
 func (ji *JWK) PrivateKey() (crypto.PrivateKey, error) {
 	switch ji.KeyType {
 	case KeyTypeEC:
-		if jec, ok := ji.jtype.(jwkEC); ok {
+		if jec, ok := ji.jwtImpl.(jwkEC); ok {
 			return jec.PrivateKey()
 		}
 	}
@@ -134,7 +135,7 @@ func (ji *JWK) PrivateKey() (crypto.PrivateKey, error) {
 func (ji *JWK) SecretKey() ([]byte, error) {
 	switch ji.KeyType {
 	case KeyTypeOct:
-		if jsym, ok := ji.jtype.(jwkSymmetric); ok {
+		if jsym, ok := ji.jwtImpl.(jwkSymmetric); ok {
 			return jsym.Key(), nil
 		}
 
@@ -225,7 +226,7 @@ func (ec *jwkEC) PublicKeyJWK() (JWK, error) {
 		KeyType:   ec.KeyType,
 		Algorithm: ec.Algo,
 		KeyID:     ec.KeyID,
-		jtype: jwkEC{
+		jwtImpl: jwkEC{
 			jwk:   ec.jwk,
 			Curve: ec.Curve,
 			X:     ec.X,
@@ -268,7 +269,7 @@ func (js *jwkSymmetric) Key() []byte {
 
 func (j JWK) MarshalJSON() ([]byte, error) {
 	// Set the Algo and KeyID in case the JWK fields have changed
-	switch jt := j.jtype.(type) {
+	switch jt := j.jwtImpl.(type) {
 	case jwkEC:
 		jt.jwk.Algo = j.Algorithm
 		jt.jwk.KeyID = j.KeyID
@@ -279,5 +280,5 @@ func (j JWK) MarshalJSON() ([]byte, error) {
 		return json.Marshal(jt)
 	}
 
-	return json.Marshal(j.jtype)
+	return json.Marshal(j.jwtImpl)
 }
