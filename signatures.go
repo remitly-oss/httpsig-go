@@ -94,7 +94,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			r.FillBytes(sigBytes[0:32])
 			s.FillBytes(sigBytes[32:64])
 		} else {
-			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
+			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
 		}
 	case Algo_ECDSA_P384_SHA384:
 		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
@@ -108,7 +108,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			r.FillBytes(sigBytes[0:48])
 			s.FillBytes(sigBytes[48:96])
 		} else {
-			return fmt.Errorf("Invalid private key. Requires ed25519.PrivateKey")
+			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
 		}
 	case Algo_ED25519:
 		if edpk, ok := sp.PrivateKey.(ed25519.PrivateKey); ok {

@@ -76,7 +76,7 @@ func ReadTestPrivateKey(t testing.TB, pkFile string, hint ...string) crypto.Priv
 	return pkey
 }
 
-func Diff(t *testing.T, expected, actual interface{}, msg string, opts ...cmp.Option) bool {
+func Diff(t *testing.T, expected, actual any, msg string, opts ...cmp.Option) bool {
 	if diff := cmp.Diff(expected, actual, opts...); diff != "" {
 		t.Errorf("%s (-want +got):\n%s", msg, diff)
 		return true

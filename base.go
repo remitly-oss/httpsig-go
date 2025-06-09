@@ -54,6 +54,13 @@ func (hrr httpMessage) Context() context.Context {
 	return hrr.Req.Context()
 }
 
+func (hrr httpMessage) isDebug() bool {
+	if dbgval, ok := hrr.Context().Value(ctxKeyAddDebug).(bool); ok {
+		return dbgval
+	}
+	return false
+}
+
 /*
 calculateSignatureBase calculates the 'signature base' - the data used as the input to signing or verifying
 The signature base is an ASCII string containing the canonicalized HTTP message components covered by the signature.
@@ -232,12 +239,10 @@ func deriveComponentValueRequest(req *http.Request, component componentID) (stri
 // deriveTargetURI resolves to an absolute form as required by RFC 9110 and referenced by the http signatures spec.
 // The target URI excludes the reference's fragment component, if any, since fragment identifiers are reserved for client-side processing
 func deriveTargetURI(req *http.Request) string {
-	if req.URL.IsAbs() {
-		return req.RequestURI
-	}
 	scheme := "https"
 	if req.TLS == nil {
 		scheme = "http"
 	}
+
 	return fmt.Sprintf("%s://%s%s%s", scheme, req.Host, req.URL.RawPath, req.URL.RawQuery)
 }

@@ -11,6 +11,11 @@ import (
 	"os"
 )
 
+const (
+	KeyTypeEC  = "EC"
+	KeyTypeOct = "oct"
+)
+
 func ReadJWKFile(jwkFile string) (JWK, error) {
 	keyBytes, err := os.ReadFile(jwkFile)
 	if err != nil {
@@ -23,49 +28,61 @@ func ReadJWK(jwkBytes []byte) (JWK, error) {
 	base := jwk{}
 	err := json.Unmarshal(jwkBytes, &base)
 	if err != nil {
-		return JWK{}, fmt.Errorf("Failed to json parse JWK public key: %w", err)
+		return JWK{}, fmt.Errorf("Failed to json parse JWK: %w", err)
 	}
-	return JWK{
+	jwk := JWK{
 		KeyType:   base.KeyType,
 		Algorithm: base.Algo,
 		KeyID:     base.KeyID,
-		raw:       json.RawMessage(jwkBytes),
-	}, nil
+	}
+	switch base.KeyType {
+	case KeyTypeEC:
+		jec := jwkEC{}
+		err := json.Unmarshal(jwkBytes, &jec)
+		if err != nil {
+			return JWK{}, fmt.Errorf("Failed to json parse JWK: %w", err)
+		}
+		jwk.jtype = jec
+	case KeyTypeOct:
+		jsym := jwkSymmetric{}
+		err := json.Unmarshal(jwkBytes, &jsym)
+		if err != nil {
+			return JWK{}, fmt.Errorf("Failed to json parse JWK: %w", err)
+		}
+		jwk.jtype = jsym
+	default:
+		return JWK{}, fmt.Errorf("Unsupported key type/kty - '%s'", base.KeyType)
+	}
+
+	return jwk, nil
 }
 
 // ReadJWKFromPEM converts a PEM encoded private key to JWK. Use 'fields' to set additional fields like kty, and kid. alg is set based on the passed in PrivateKey.
-func ReadJWKFromPEM(fields JWK, pkeyBytes []byte) (JWK, error) {
+func ReadJWKFromPEM(pkeyBytes []byte) (JWK, error) {
 	pkey, err := ReadPrivateKey(pkeyBytes)
 	if err != nil {
 		return JWK{}, err
 	}
-	return FromPrivateKey(fields, pkey)
+	return FromPrivateKey(pkey)
 }
 
 // FromPrivateKey creates a JWK from a crypto.PrivateKey. Use 'fields' to set additional fields like kty, and kid. alg is set based on the passed in PrivateKey.
-func FromPrivateKey(fields JWK, pkey crypto.PrivateKey) (JWK, error) {
+func FromPrivateKey(pkey crypto.PrivateKey) (JWK, error) {
 	switch key := pkey.(type) {
 	case *ecdsa.PrivateKey:
-		jwk := jwkEC{
+		jec := jwkEC{
 			jwk: jwk{
-				KeyType: "EC",
-				Algo:    fields.Algorithm,
-				KeyID:   fields.KeyID,
+				KeyType: KeyTypeEC,
 			},
 			Curve: key.Curve.Params().Name,
-			X:     octet{key.X},
-			Y:     octet{key.Y},
-			D:     octet{key.D},
+			X:     &octet{*key.X},
+			Y:     &octet{*key.Y},
+			D:     &octet{*key.D},
 		}
-		out, err := json.Marshal(jwk)
-		if err != nil {
-			return JWK{}, fmt.Errorf("Error marshalling JWK: %w", err)
-		}
+
 		return JWK{
-			KeyType:   "EC",
-			Algorithm: fields.Algorithm,
-			KeyID:     fields.KeyID,
-			raw:       out,
+			KeyType: KeyTypeEC,
+			jtype:   jec,
 		}, nil
 	default:
 		return JWK{}, fmt.Errorf("Unsupported private key type '%T'", pkey)
@@ -74,55 +91,60 @@ func FromPrivateKey(fields JWK, pkey crypto.PrivateKey) (JWK, error) {
 
 // JWK provides basic data and usage for a JWK.
 type JWK struct {
-	KeyType   string // 'kty'
+	KeyType   string // 'kty' - "EC", "RSA", "oct"
 	Algorithm string // 'alg'
 	KeyID     string // 'kid'
-	raw       json.RawMessage
+	jtype     any    // the type of JWK based on KeyType.
 }
 
 func (ji *JWK) PublicKey() (crypto.PublicKey, error) {
 	switch ji.KeyType {
-	case "EC": // ECC
-		jwk := jwkEC{}
-		err := json.Unmarshal(ji.raw, &jwk)
-		if err != nil {
-			return JWK{}, fmt.Errorf("Failed to json parse JWK into key type 'EC': %w", err)
+	case ji.KeyType: // ECC
+		if jec, ok := ji.jtype.(jwkEC); ok {
+			return jec.PublicKey()
 		}
-		return jwk.PublicKey()
 	}
 
-	return nil, fmt.Errorf("Unsupported key type for PublicKey'%s'", ji.KeyType)
+	return nil, fmt.Errorf("Unsupported key type for PublicKey - '%s'", ji.KeyType)
+}
+
+func (ji *JWK) PublicKeyJWK() (JWK, error) {
+	switch ji.KeyType {
+	case KeyTypeEC:
+		if jec, ok := ji.jtype.(jwkEC); ok {
+			jec.jwk.Algo = ji.Algorithm
+			jec.jwk.KeyID = ji.KeyID
+			return jec.PublicKeyJWK()
+		}
+	}
+
+	return JWK{}, fmt.Errorf("Unsupported key type for PublicKey'%s'", ji.KeyType)
 }
 
 func (ji *JWK) PrivateKey() (crypto.PrivateKey, error) {
 	switch ji.KeyType {
-	case "EC":
-		jwk := jwkEC{}
-		err := json.Unmarshal(ji.raw, &jwk)
-		if err != nil {
-			return JWK{}, fmt.Errorf("Failed to json parse JWK into key type 'EC': %w", err)
+	case KeyTypeEC:
+		if jec, ok := ji.jtype.(jwkEC); ok {
+			return jec.PrivateKey()
 		}
-		return jwk.PrivateKey()
 	}
-	return nil, fmt.Errorf("Unsupported key type PrivateKey '%s'", ji.KeyType)
+	return nil, fmt.Errorf("Unsupported key type PrivateKey - '%s'", ji.KeyType)
 }
 
 func (ji *JWK) SecretKey() ([]byte, error) {
 	switch ji.KeyType {
-	case "oct":
-		jwk := jwkSymmetric{}
-		err := json.Unmarshal(ji.raw, &jwk)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to json parse JWK into key type 'oct': %w", err)
+	case KeyTypeOct:
+		if jsym, ok := ji.jtype.(jwkSymmetric); ok {
+			return jsym.Key(), nil
 		}
-		return jwk.Key(), nil
+
 	}
 	return nil, fmt.Errorf("Unsupported key type for Secret '%s'", ji.KeyType)
 }
 
 // octet represents the data for base64 URL encoded data as specified by JWKs.
 type octet struct {
-	*big.Int
+	big.Int
 }
 
 func (ob octet) MarshalJSON() ([]byte, error) {
@@ -145,7 +167,7 @@ func (ob *octet) UnmarshalJSON(data []byte) error {
 
 	x := new(big.Int)
 	x.SetBytes(rawBytes)
-	*ob = octet{x}
+	*ob = octet{*x}
 
 	return nil
 }
@@ -159,9 +181,9 @@ type jwk struct {
 type jwkEC struct {
 	jwk
 	Curve string `json:"crv"`         // The curve used with the key e.g. P-256
-	X     octet  `json:"x"`           // x coordinate of the curve.
-	Y     octet  `json:"y"`           // y coordinate of the curve.
-	D     octet  `json:"d,omitempty"` // For private keys.
+	X     *octet `json:"x"`           // x coordinate of the curve.
+	Y     *octet `json:"y"`           // y coordinate of the curve.
+	D     *octet `json:"d,omitempty"` // For private keys.
 }
 
 func (ec *jwkEC) params() (crv elliptic.Curve, byteLen int, e error) {
@@ -193,12 +215,29 @@ func (ec *jwkEC) PublicKey() (*ecdsa.PublicKey, error) {
 
 	return &ecdsa.PublicKey{
 		Curve: crv,
-		X:     ec.X.Int,
-		Y:     ec.Y.Int,
+		X:     &ec.X.Int,
+		Y:     &ec.Y.Int,
+	}, nil
+}
+
+func (ec *jwkEC) PublicKeyJWK() (JWK, error) {
+	return JWK{
+		KeyType:   ec.KeyType,
+		Algorithm: ec.Algo,
+		KeyID:     ec.KeyID,
+		jtype: jwkEC{
+			jwk:   ec.jwk,
+			Curve: ec.Curve,
+			X:     ec.X,
+			Y:     ec.Y,
+		},
 	}, nil
 }
 
 func (ec *jwkEC) PrivateKey() (*ecdsa.PrivateKey, error) {
+	if ec.D == nil {
+		return nil, fmt.Errorf("JWK does not contain a private key")
+	}
 	pubkey, err := ec.PublicKey()
 	if err != nil {
 		return nil, err
@@ -214,19 +253,31 @@ func (ec *jwkEC) PrivateKey() (*ecdsa.PrivateKey, error) {
 
 	return &ecdsa.PrivateKey{
 		PublicKey: *pubkey,
-		D:         ec.D.Int,
+		D:         &ec.D.Int,
 	}, nil
 }
 
 type jwkSymmetric struct {
 	jwk
-	K octet `json:"k" ` // Symmetric key
+	K *octet `json:"k" ` // Symmetric key
 }
 
 func (js *jwkSymmetric) Key() []byte {
 	return js.K.Bytes()
 }
 
-func (jwk JWK) MarshalJSON() ([]byte, error) {
-	return jwk.raw, nil
+func (j JWK) MarshalJSON() ([]byte, error) {
+	// Set the Algo and KeyID in case the JWK fields have changed
+	switch jt := j.jtype.(type) {
+	case jwkEC:
+		jt.jwk.Algo = j.Algorithm
+		jt.jwk.KeyID = j.KeyID
+		return json.Marshal(jt)
+	case jwkSymmetric:
+		jt.jwk.Algo = j.Algorithm
+		jt.jwk.KeyID = j.KeyID
+		return json.Marshal(jt)
+	}
+
+	return json.Marshal(j.jtype)
 }

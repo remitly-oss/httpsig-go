@@ -13,12 +13,12 @@ import (
 
 func TestVerify(t *testing.T) {
 	testcases := []struct {
-		Name            string
-		RequestFile     string
-		Label           string
-		Keys            httpsig.KeyFetcher
-		Expected        httpsig.VerifyResult
-		ExpectedKeySpec httpsig.KeySpec
+		Name         string
+		RequestFile  string
+		Label        string
+		AddDebugInfo bool
+		Keys         httpsig.KeyFetcher
+		Expected     httpsig.VerifyResult
 	}{
 		{
 			Name:        "OneValid",
@@ -38,31 +38,66 @@ func TestVerify(t *testing.T) {
 					httpsig.MetaKeyID:   "test-key-rsa-pss",
 					httpsig.MetaCreated: int64(1618884473),
 					httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
-				},
+				}},
+				KeySpecer: httpsig.KeySpec{
+					KeyID:  "test-key-rsa-pss",
+					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			},
-			ExpectedKeySpec: httpsig.KeySpec{
-				KeyID:  "test-key-rsa-pss",
-				Algo:   httpsig.Algo_RSA_PSS_SHA512,
-				PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
+		},
+		{
+			Name:         "OneValidDebug",
+			Label:        "sig-b21",
+			RequestFile:  "verify_request1.txt",
+			AddDebugInfo: true,
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-rsa-pss": {
+					KeyID:  "test-key-rsa-pss",
+					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
+				},
+			}),
+			Expected: httpsig.VerifyResult{
+				Verified: true,
+				Label:    "sig-b21",
+				MetadataProvider: &fixedMetadataProvider{map[httpsig.Metadata]any{
+					httpsig.MetaKeyID:   "test-key-rsa-pss",
+					httpsig.MetaCreated: int64(1618884473),
+					httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
+				}},
+				KeySpecer: httpsig.KeySpec{
+					KeyID:  "test-key-rsa-pss",
+					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
+				},
+				DebugInfo: httpsig.VerifyDebugInfo{
+					SignatureBase: `"@signature-params": ();created=1618884473;keyid="test-key-rsa-pss";nonce="b3k2pp5k7z-50gnwp.yemd"`,
+				},
 			},
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(t *testing.T) {
-			actual, err := httpsig.Verify(sigtest.ReadRequest(t, tc.RequestFile), tc.Keys, httpsig.VerifyProfile{SignatureLabel: tc.Label})
+			req := sigtest.ReadRequest(t, tc.RequestFile)
+			if tc.AddDebugInfo {
+				req = req.WithContext(httpsig.SetAddDebugInfo(req.Context()))
+			}
+			actual, err := httpsig.Verify(req, tc.Keys, httpsig.VerifyProfile{SignatureLabel: tc.Label})
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			// VerifyResult is returned even when error is also returned.
+			// Because VerifryResult embed Metadataprovider we first need diff ignoring the MetadataProvider
+			sigtest.Diff(t, tc.Expected, actual, "Did not match",
+				cmp.FilterPath(func(p cmp.Path) bool {
+					return p.String() == "MetadataProvider"
+				}, cmp.Ignore()))
+
+			// Then diff the metadata provider
 			sigtest.Diff(t, tc.Expected, actual, "Did not match", getCmdOpts()...)
-			actualKS, err := actual.KeySpecer.KeySpec()
-			if err != nil {
-				t.Fatal(err)
-			}
-			sigtest.Diff(t, tc.ExpectedKeySpec, actualKS, "Key spec did not match")
 		})
 	}
 }
@@ -176,10 +211,12 @@ func metaVal[E comparable](f1 func() (E, error)) any {
 
 func getCmdOpts() []cmp.Option {
 	return []cmp.Option{
-		cmp.Transformer("Metadata", TransformMeta),
+		// This gets used for *ANY* struct assignable to MetadataProvider including other structres
+		// that embed it!
+		cmp.Transformer("MetadataProvider", TransformMeta),
 	}
-
 }
+
 func TransformMeta(md httpsig.MetadataProvider) map[string]any {
 	out := map[string]any{}
 
