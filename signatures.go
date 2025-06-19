@@ -97,8 +97,9 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
 		}
 	case Algo_ECDSA_P384_SHA384:
-		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
-			msgHash := sha512.Sum384(base.base)
+		msgHash := sha512.Sum384(base.base)
+		switch eccpk := sp.PrivateKey.(type) {
+		case *ecdsa.PrivateKey:
 			r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
 			if err != nil {
 				return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
@@ -107,8 +108,13 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			sigBytes = make([]byte, 96)
 			r.FillBytes(sigBytes[0:48])
 			s.FillBytes(sigBytes[48:96])
-		} else {
-			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
+		case crypto.Signer:
+			sigBytes, err = eccpk.Sign(rand.Reader, msgHash[:], crypto.SHA384)
+			if err != nil {
+				return newError(ErrInternal, "Failed to sign with ecdsa custom signer", err)
+			}
+		default:
+			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey or crypto.Signer")
 		}
 	case Algo_ED25519:
 		if edpk, ok := sp.PrivateKey.(ed25519.PrivateKey); ok {
