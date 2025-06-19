@@ -97,6 +97,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
 		}
 	case Algo_ECDSA_P384_SHA384:
+		fmt.Printf("We are hashing:%s\n", string(base.base))
 		msgHash := sha512.Sum384(base.base)
 		switch eccpk := sp.PrivateKey.(type) {
 		case *ecdsa.PrivateKey:
