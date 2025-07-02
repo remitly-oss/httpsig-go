@@ -56,7 +56,7 @@ Create net/http Handlers that verify incoming requests to the server.
 ## Stability
 The v1.1+ release is stable and production ready. 
 
-Please file issues and bus in the github projects issue tracker.
+Please file issues and bugs in the github projects issue tracker.
 
 ## References
 
