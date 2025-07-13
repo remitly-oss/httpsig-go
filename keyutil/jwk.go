@@ -198,7 +198,7 @@ func (ec *jwkEC) params() (crv elliptic.Curve, byteLen int, e error) {
 	default:
 		return nil, 0, fmt.Errorf("Unsupported ECC curve '%s'", ec.Curve)
 	}
-	return crv, crv.Params().BitSize / 8, nil
+	return crv, (crv.Params().BitSize + 7) / 8, nil
 }
 
 func (ec *jwkEC) PublicKey() (*ecdsa.PublicKey, error) {
