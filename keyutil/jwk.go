@@ -198,6 +198,7 @@ func (ec *jwkEC) params() (crv elliptic.Curve, byteLen int, e error) {
 	default:
 		return nil, 0, fmt.Errorf("Unsupported ECC curve '%s'", ec.Curve)
 	}
+	// The P-521 curve has 521 bits (65.125 bytes), so we must round up to get the bytes. We need 66 bytes to store 521 bits.
 	return crv, (crv.Params().BitSize + 7) / 8, nil
 }
 
