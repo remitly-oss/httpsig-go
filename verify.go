@@ -393,7 +393,7 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 	case Algo_ECDSA_P384_SHA384:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
 			if len(sig.Signature) != 96 {
-				return specer, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
+				return specer, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P384_SHA384))
 			}
 			msgHash := sha512.Sum384(base.base)
 			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
