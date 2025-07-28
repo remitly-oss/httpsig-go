@@ -55,8 +55,8 @@ func (vh VerifyHandler) ServeHTTP(rw http.ResponseWriter, inReq *http.Request) {
 	vr, err := vh.verifier.Verify(inReq)
 	if err != nil {
 		// Failed to verify
-		rw.Write([]byte("Unauthorized"))
 		rw.WriteHeader(http.StatusUnauthorized)
+		rw.Write([]byte("Unauthorized"))
 		return
 	}
 
