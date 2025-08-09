@@ -2,60 +2,12 @@ package httpsig
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/remitly-oss/httpsig-go/sigtest"
 )
-
-// Test helper for creating metadata providers with fixed values
-type testMetadataProvider struct {
-	values map[Metadata]any
-}
-
-func (tmp testMetadataProvider) Created() (int, error) {
-	if val, ok := tmp.values[MetaCreated]; ok {
-		return int(val.(int64)), nil
-	}
-	return 0, fmt.Errorf("No created value")
-}
-
-func (tmp testMetadataProvider) Expires() (int, error) {
-	if val, ok := tmp.values[MetaExpires]; ok {
-		return int(val.(int64)), nil
-	}
-	return 0, fmt.Errorf("No expires value")
-}
-
-func (tmp testMetadataProvider) Nonce() (string, error) {
-	if val, ok := tmp.values[MetaNonce]; ok {
-		return val.(string), nil
-	}
-	return "", fmt.Errorf("No nonce value")
-}
-
-func (tmp testMetadataProvider) Alg() (string, error) {
-	if val, ok := tmp.values[MetaAlgorithm]; ok {
-		return val.(string), nil
-	}
-	return "", fmt.Errorf("No alg value")
-}
-
-func (tmp testMetadataProvider) KeyID() (string, error) {
-	if val, ok := tmp.values[MetaKeyID]; ok {
-		return val.(string), nil
-	}
-	return "", fmt.Errorf("No keyid value")
-}
-
-func (tmp testMetadataProvider) Tag() (string, error) {
-	if val, ok := tmp.values[MetaTag]; ok {
-		return val.(string), nil
-	}
-	return "", fmt.Errorf("No tag value")
-}
 
 func TestValidateProfile(t *testing.T) {
 	testcases := []struct {
@@ -525,7 +477,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-2 * time.Hour).Unix()), // Very old
 							MetaExpires: int64(now.Add(-1 * time.Hour).Unix()), // Expired
@@ -546,7 +498,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-2 * time.Hour).Unix()),
 							MetaExpires: int64(now.Add(-1 * time.Hour).Unix()),
@@ -571,7 +523,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-2 * time.Minute).Unix()), // 2 minutes ago
 						},
@@ -591,7 +543,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-10 * time.Minute).Unix()), // 10 minutes ago
 						},
@@ -612,7 +564,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(5 * time.Minute).Unix()), // 5 minutes in future
 						},
@@ -633,7 +585,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(30 * time.Second).Unix()), // 30 seconds in future (clock skew)
 						},
@@ -653,7 +605,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-24 * time.Hour).Unix()), // 24 hours ago
 						},
@@ -675,7 +627,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaExpires: int64(now.Add(5 * time.Minute).Unix()), // Expires in 5 minutes
 						},
@@ -695,7 +647,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaExpires: int64(now.Add(-5 * time.Minute).Unix()), // Expired 5 minutes ago
 						},
@@ -716,7 +668,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaExpires: int64(now.Add(-30 * time.Second).Unix()), // Expired 30 seconds ago
 						},
@@ -737,7 +689,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaExpires: int64(now.Add(-1 * time.Hour).Unix()), // Very expired
 						},
@@ -759,7 +711,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-2 * time.Minute).Unix()), // 2 minutes ago
 							MetaExpires: int64(now.Add(3 * time.Minute).Unix()),  // 3 minutes from now
@@ -781,7 +733,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-10 * time.Minute).Unix()), // 10 minutes ago
 							MetaExpires: int64(now.Add(3 * time.Minute).Unix()),   // 3 minutes from now
@@ -804,7 +756,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							MetaCreated: int64(now.Add(-2 * time.Minute).Unix()), // 2 minutes ago (valid)
 							MetaExpires: int64(now.Add(-3 * time.Minute).Unix()), // Expired 3 minutes ago
@@ -829,7 +781,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							// Missing MetaCreated value
 						},
@@ -850,7 +802,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaExpires},
-					MetadataValues: testMetadataProvider{
+					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
 							// Missing MetaExpires value
 						},
@@ -873,7 +825,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{}, // No created metadata
-					MetadataValues: testMetadataProvider{values: map[Metadata]any{}},
+					MetadataValues: fixedMetadataProvider{values: map[Metadata]any{}},
 				},
 			},
 			Profile: VerifyProfile{
@@ -889,7 +841,7 @@ func TestValidateTiming(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{}, // No expires metadata
-					MetadataValues: testMetadataProvider{values: map[Metadata]any{}},
+					MetadataValues: fixedMetadataProvider{values: map[Metadata]any{}},
 				},
 			},
 			Profile: VerifyProfile{
