@@ -39,6 +39,9 @@ func TestValidateProfile(t *testing.T) {
 				AllowedAlgorithms: []Algorithm{Algo_ECDSA_P256_SHA256},
 				RequiredFields:    Fields("content-digest", "@method", "@target-uri"),
 				RequiredMetadata:  []Metadata{MetaCreated, MetaKeyID},
+				nowTime: func() time.Time {
+					return time.Unix(int64(1755206251), 0)
+				},
 			},
 			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
 			Expected:    ErrCode(""),
@@ -234,6 +237,9 @@ func TestValidateProfile(t *testing.T) {
 			},
 			Profile: VerifyProfile{
 				RequiredMetadata: []Metadata{MetaCreated, MetaKeyID},
+				nowTime: func() time.Time {
+					return time.Unix(int64(1755206251), 0)
+				},
 			},
 			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
 			Expected:    ErrCode(""),
@@ -291,6 +297,9 @@ func TestValidateProfile(t *testing.T) {
 			},
 			Profile: VerifyProfile{
 				DisallowedMetadata: []Metadata{MetaAlgorithm},
+				nowTime: func() time.Time {
+					return time.Unix(int64(1755206251), 0)
+				},
 			},
 			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
 			Expected:    ErrCode(""),
@@ -322,6 +331,9 @@ func TestValidateProfile(t *testing.T) {
 				RequiredFields:     Fields("content-digest", "@method", "@target-uri"),
 				RequiredMetadata:   []Metadata{MetaCreated, MetaKeyID},
 				DisallowedMetadata: []Metadata{MetaAlgorithm},
+				nowTime: func() time.Time {
+					return time.Unix(int64(1755206251), 0)
+				},
 			},
 			KeySpecAlgo: Algo_ED25519,
 			Expected:    ErrCode(""),
@@ -367,7 +379,7 @@ func TestValidateProfile(t *testing.T) {
 					MetadataParams: []Metadata{MetaCreated, MetaKeyID},
 					MetadataValues: fixedMetadataProvider{
 						values: map[Metadata]any{
-							MetaCreated: int64(1755206251),
+							MetaCreated: time.Now().Unix(),
 						},
 					},
 				},
@@ -617,27 +629,6 @@ func TestValidateTiming(t *testing.T) {
 			},
 			Expected: ErrCode(""), // Should be allowed due to clock skew tolerance
 		},
-		{
-			Name: "NoCreatedValidDuration_NoTimeLimit",
-			Sig: extractedSignature{
-				Label:     "sig1",
-				Signature: []byte{},
-				Input: sigBaseInput{
-					Components:     []componentID{},
-					MetadataParams: []Metadata{MetaCreated},
-					MetadataValues: fixedMetadataProvider{
-						values: map[Metadata]any{
-							MetaCreated: int64(now.Add(-24 * time.Hour).Unix()), // 24 hours ago
-						},
-					},
-				},
-			},
-			Profile: VerifyProfile{
-				CreatedValidDuration: 0, // No duration limit
-			},
-			Expected: ErrCode(""), // Should be allowed
-		},
-
 		// Expires Time Validation Tests
 		{
 			Name: "ValidExpiresTime",

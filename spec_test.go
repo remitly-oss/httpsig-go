@@ -96,7 +96,8 @@ func TestSpecVerify(t *testing.T) {
 				requiredKeyID: tc.Key.KeyID,
 				key:           tc.Key,
 			}, VerifyProfile{
-				SignatureLabel: fmt.Sprintf("sig-%s", tc.Name),
+				SignatureLabel:         fmt.Sprintf("sig-%s", tc.Name),
+				DisableTimeEnforcement: true,
 			})
 
 			var verifyErr error

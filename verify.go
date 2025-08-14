@@ -28,7 +28,6 @@ var (
 		RequiredMetadata:     []Metadata{MetaCreated, MetaKeyID},
 		DisallowedMetadata:   []Metadata{MetaAlgorithm}, // The algorithm should be looked up from the keyid not an explicit setting.
 		CreatedValidDuration: time.Minute * 5,           // Signatures must have been created within within the last 5 minutes
-		DateFieldSkew:        time.Minute,               // If the created parameter is present, the Date header cannot be more than a minute off.
 	}
 
 	// DefaultRequiredFields covers the request body with 'content-digest' the method and full URI.
@@ -36,6 +35,9 @@ var (
 	DefaultRequiredFields = Fields("content-digest", "@method", "@target-uri")
 
 	ctxKeyAddDebug = struct{}{}
+
+	defaultExpireSkew           = time.Minute
+	defaultCreatedValidDuration = 5 * time.Minute
 )
 
 // KeySpec is the per-key information needed to verify a signature.
@@ -82,10 +84,13 @@ type VerifyProfile struct {
 	// Timing enforcement options
 	DisableTimeEnforcement       bool          // If true do no time enforcement on any fields
 	DisableExpirationEnforcement bool          // If expiration is present default to enforce
-	CreatedValidDuration         time.Duration // Duration allowed for between time.Now and the created time
-	ExpiredSkew                  time.Duration // Maximum duration allowed between time.Now and the expired time
-	DateFieldSkew                time.Duration // Maximum duration allowed between Date field and created
+	CreatedValidDuration         time.Duration // Duration allowed for between time.Now and the created time. Default to 5 minutes.
+	ExpiredSkew                  time.Duration // Maximum duration allowed between time.Now and the expired time. Default to 1 minute.
+
+	// Control time for testing
+	nowTime func() time.Time
 }
+
 type VerifyResult struct {
 	Verified  bool
 	Label     string
@@ -123,6 +128,9 @@ func VerifyResponse(resp *http.Response, kf KeyFetcher, profile VerifyProfile) (
 func NewVerifier(kf KeyFetcher, profile VerifyProfile) (*Verifier, error) {
 	if kf == nil {
 		return nil, newError(ErrSigKeyFetch, "KeyFetcher cannot be nil")
+	}
+	if profile.nowTime == nil {
+		profile.nowTime = time.Now
 	}
 	return &Verifier{
 		keys:    kf,
@@ -286,7 +294,7 @@ func unmarshalSignature(sigs signaturesSFV, label string) (extractedSignature, e
 	for _, componentItem := range sigInputList.Items {
 		name, ok := componentItem.Value.(string)
 		if !ok {
-			return sigInfo, newError(ErrSigInvalidSignature, fmt.Sprintf("signature components must be string types"))
+			return sigInfo, newError(ErrSigInvalidSignature, "signature components must be string types")
 		}
 		cIDs = append(cIDs, componentID{
 			Name: name,
@@ -427,6 +435,13 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 	return specer, ks, nil
 }
 
+func (vp VerifyProfile) now() time.Time {
+	if vp.nowTime == nil {
+		return time.Now()
+	}
+	return vp.nowTime()
+}
+
 func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error {
 	// Validate signature label
 	if vp.SignatureLabel != "" && sig.Label != vp.SignatureLabel {
@@ -471,7 +486,7 @@ func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error
 		}
 	}
 
-	return vp.validateTiming(sig, time.Now())
+	return vp.validateTiming(sig, vp.now())
 }
 
 func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) error {
@@ -490,10 +505,12 @@ func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) er
 		createdTimestamp := time.Unix(int64(createdTime), 0)
 
 		// Check if signature is too old (beyond CreatedValidDuration)
-		if vp.CreatedValidDuration > 0 {
-			if now.Sub(createdTimestamp) > vp.CreatedValidDuration {
-				return newError(ErrSigProfile, fmt.Sprintf("Signature created time %s is older than allowed duration %s", createdTimestamp, vp.CreatedValidDuration))
-			}
+		createDuration := vp.CreatedValidDuration
+		if createDuration == 0 {
+			createDuration = defaultCreatedValidDuration
+		}
+		if now.Sub(createdTimestamp) > createDuration {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature created time %s is older than allowed duration %s", createdTimestamp, createDuration))
 		}
 
 		// Check if signature was created in the future (allow some clock skew)
@@ -504,30 +521,24 @@ func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) er
 	}
 
 	// Validate expires time if present
-	if slices.Contains(sig.Input.MetadataParams, MetaExpires) {
-		if !vp.DisableExpirationEnforcement {
-			expiresTime, err := sig.Input.MetadataValues.Expires()
-			if err != nil {
-				return newError(ErrSigProfile, "Failed to get expires timestamp from signature metadata", err)
-			}
+	if slices.Contains(sig.Input.MetadataParams, MetaExpires) && !vp.DisableExpirationEnforcement {
+		expiresTime, err := sig.Input.MetadataValues.Expires()
+		if err != nil {
+			return newError(ErrSigProfile, "Failed to get expires timestamp from signature metadata", err)
+		}
 
-			expiresTimestamp := time.Unix(int64(expiresTime), 0)
+		expiresTimestamp := time.Unix(int64(expiresTime), 0)
 
-			// Check if signature has expired
-			skew := vp.ExpiredSkew
-			if skew == 0 {
-				skew = time.Minute // Default 1 minute skew allowance
-			}
+		// Check if signature has expired
+		skew := vp.ExpiredSkew
+		if skew == 0 {
+			skew = defaultExpireSkew
+		}
 
-			if now.Sub(expiresTimestamp) > skew {
-				return newError(ErrSigProfile, fmt.Sprintf("Signature expired at %s (now: %s, allowed skew: %s)", expiresTimestamp, now, skew))
-			}
+		if now.Sub(expiresTimestamp) > skew {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature expired at %s (now: %s, allowed skew: %s)", expiresTimestamp, now, skew))
 		}
 	}
-
-	// Note: Date field skew validation would require access to HTTP headers
-	// which is not available in the current function signature.
-	// If needed, the signature should be modified to: validateTiming(sig extractedSignature, headers http.Header) error
 
 	return nil
 }

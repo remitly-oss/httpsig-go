@@ -11,7 +11,8 @@ import (
 	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
-func TestVerify(t *testing.T) {
+// TestVerifyResult ensures the VerifyReuslt contains the expected shape.
+func TestVerifyResult(t *testing.T) {
 	testcases := []struct {
 		Name         string
 		RequestFile  string
@@ -84,7 +85,7 @@ func TestVerify(t *testing.T) {
 			if tc.AddDebugInfo {
 				req = req.WithContext(httpsig.SetAddDebugInfo(req.Context()))
 			}
-			actual, err := httpsig.Verify(req, tc.Keys, httpsig.VerifyProfile{SignatureLabel: tc.Label})
+			actual, err := httpsig.Verify(req, tc.Keys, httpsig.VerifyProfile{SignatureLabel: tc.Label, DisableTimeEnforcement: true})
 			if err != nil {
 				t.Fatal(err)
 			}
