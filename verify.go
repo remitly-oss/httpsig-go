@@ -337,9 +337,9 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 	}
 
 	// Check the algorithm value matches the KeySpec if it was provided as metadata
-	alg, err := sig.Input.MetadataValues.Alg()
-	if err != nil && ks.Algo != Algorithm(alg) {
-		return specer, ks, newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Algorithm in signature metadata is '%s' but the KeySpec is for algorithm '%s'", alg, ks.Algo))
+	signatureAlg, err := sig.Input.MetadataValues.Alg()
+	if err != nil && signatureAlg != "" && ks.Algo != Algorithm(signatureAlg) {
+		return specer, ks, newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Algorithm in signature metadata is '%s' but the KeySpec is for algorithm '%s'", signatureAlg, ks.Algo))
 	}
 
 	switch ks.Algo {
@@ -471,16 +471,14 @@ func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error
 		}
 	}
 
-	return nil
+	return vp.validateTiming(sig, time.Now())
 }
 
-func (vp VerifyProfile) validateTiming(sig extractedSignature) error {
+func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) error {
 	// Early return if time enforcement is disabled
 	if vp.DisableTimeEnforcement {
 		return nil
 	}
-
-	now := time.Now()
 
 	// Validate created time if present
 	if slices.Contains(sig.Input.MetadataParams, MetaCreated) {

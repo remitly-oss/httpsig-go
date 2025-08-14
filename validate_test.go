@@ -27,7 +27,11 @@ func TestValidateProfile(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{{Name: "content-digest"}, {Name: "@method"}, {Name: "@target-uri"}},
 					MetadataParams: []Metadata{MetaCreated, MetaKeyID},
-					MetadataValues: nil,
+					MetadataValues: fixedMetadataProvider{
+						values: map[Metadata]any{
+							MetaCreated: int64(1755206251),
+						},
+					},
 				},
 			},
 			Profile: VerifyProfile{
@@ -221,7 +225,11 @@ func TestValidateProfile(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaKeyID, MetaNonce}, // Extra metadata is OK
-					MetadataValues: nil,
+					MetadataValues: fixedMetadataProvider{
+						values: map[Metadata]any{
+							MetaCreated: int64(1755206251),
+						},
+					},
 				},
 			},
 			Profile: VerifyProfile{
@@ -274,7 +282,11 @@ func TestValidateProfile(t *testing.T) {
 				Input: sigBaseInput{
 					Components:     []componentID{},
 					MetadataParams: []Metadata{MetaCreated, MetaKeyID}, // Only allowed metadata
-					MetadataValues: nil,
+					MetadataValues: fixedMetadataProvider{
+						values: map[Metadata]any{
+							MetaCreated: int64(1755206251),
+						},
+					},
 				},
 			},
 			Profile: VerifyProfile{
@@ -297,7 +309,11 @@ func TestValidateProfile(t *testing.T) {
 						{Name: "@target-uri"},
 					},
 					MetadataParams: []Metadata{MetaCreated, MetaKeyID},
-					MetadataValues: nil,
+					MetadataValues: fixedMetadataProvider{
+						values: map[Metadata]any{
+							MetaCreated: int64(1755206251),
+						},
+					},
 				},
 			},
 			Profile: VerifyProfile{
@@ -349,7 +365,11 @@ func TestValidateProfile(t *testing.T) {
 						{Name: "@target-uri"},
 					},
 					MetadataParams: []Metadata{MetaCreated, MetaKeyID},
-					MetadataValues: nil,
+					MetadataValues: fixedMetadataProvider{
+						values: map[Metadata]any{
+							MetaCreated: int64(1755206251),
+						},
+					},
 				},
 			},
 			Profile:     DefaultVerifyProfile,
@@ -853,7 +873,7 @@ func TestValidateTiming(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(t *testing.T) {
-			err := tc.Profile.validateTiming(tc.Sig)
+			err := tc.Profile.validateTiming(tc.Sig, now)
 			if tc.Expected == ErrCode("") {
 				sigtest.Diff(t, nil, err, "Diff")
 				return
