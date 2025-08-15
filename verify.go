@@ -108,7 +108,7 @@ type Verifier struct {
 	profile VerifyProfile
 }
 
-// Verify validateos the signatures in a request and ensured the signature meets the required profile.
+// Verify validates the signatures in a request and ensured the signature meets the required profile.
 func Verify(req *http.Request, kf KeyFetcher, profile VerifyProfile) (VerifyResult, error) {
 	ver, err := NewVerifier(kf, profile)
 	if err != nil {
@@ -442,6 +442,7 @@ func (vp VerifyProfile) now() time.Time {
 	return vp.nowTime()
 }
 
+// validate enforces the VeriryProfile settings are met for the given signature. This should only done after the signature is *verified*.
 func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error {
 	// Validate signature label
 	if vp.SignatureLabel != "" && sig.Label != vp.SignatureLabel {
@@ -489,7 +490,8 @@ func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error
 	return vp.validateTiming(sig, vp.now())
 }
 
-func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) error {
+// validateTiming validates all the time based properties are within tolerance of the VerifyProfile. currentTime is passed in as a parameter to capture a stable time for all subsequent checks.
+func (vp VerifyProfile) validateTiming(sig extractedSignature, currentTime time.Time) error {
 	// Early return if time enforcement is disabled
 	if vp.DisableTimeEnforcement {
 		return nil
@@ -509,13 +511,13 @@ func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) er
 		if createDuration == 0 {
 			createDuration = defaultCreatedValidDuration
 		}
-		if now.Sub(createdTimestamp) > createDuration {
+		if currentTime.Sub(createdTimestamp) > createDuration {
 			return newError(ErrSigProfile, fmt.Sprintf("Signature created time %s is older than allowed duration %s", createdTimestamp, createDuration))
 		}
 
 		// Check if signature was created in the future (allow some clock skew)
 		allowedSkew := time.Minute // Default 1 minute clock skew allowance
-		if createdTimestamp.Sub(now) > allowedSkew {
+		if createdTimestamp.Sub(currentTime) > allowedSkew {
 			return newError(ErrSigProfile, fmt.Sprintf("Signature created time %s is too far in the future", createdTimestamp))
 		}
 	}
@@ -535,8 +537,8 @@ func (vp VerifyProfile) validateTiming(sig extractedSignature, now time.Time) er
 			skew = defaultExpireSkew
 		}
 
-		if now.Sub(expiresTimestamp) > skew {
-			return newError(ErrSigProfile, fmt.Sprintf("Signature expired at %s (now: %s, allowed skew: %s)", expiresTimestamp, now, skew))
+		if currentTime.Sub(expiresTimestamp) > skew {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature expired at %s (now: %s, allowed skew: %s)", expiresTimestamp, currentTime, skew))
 		}
 	}
 
