@@ -36,23 +36,28 @@ This is an implementation of HTTP Message Signatures per RFC 9421. The library p
    - `SigningKey` holds cryptographic material and metadata
    - Supports asymmetric (RSA, ECDSA, Ed25519) and symmetric (HMAC) algorithms
 
-2. **Verification Pipeline** (`verify.go`)
+2. **Accept-Signature Support** (`accept.go`)
+   - `AcceptSignature` struct for parsing Accept-Signature headers
+   - `ParseAcceptSignature()` function for client-server signature negotiation
+   - Support for signature profile requirements from clients
+
+3. **Verification Pipeline** (`verify.go`)
    - `Verifier` struct handles signature verification
    - `VerifyProfile` enforces security requirements beyond basic signature validation
    - `KeyFetcher` interface for key retrieval by keyID or other metadata
-   - Time-based validation for created/expires metadata
+   - Time-based validation for created/expires metadata with configurable tolerances
 
-3. **Core Engine** (`base.go`)
+4. **Core Engine** (`base.go`)
    - `calculateSignatureBase()` generates the canonical string for signing/verification
    - `componentID` represents signature components (headers or derived values like @method, @target-uri)
    - `httpMessage` abstraction handles both requests and responses uniformly
 
-4. **HTTP Integration** (`http.go`)
+5. **HTTP Integration** (`http.go`)
    - `NewHTTPClient()` creates signing/verifying HTTP clients
    - `NewHandler()` wraps http.Handler for automatic request verification
    - `transport` type implements http.RoundTripper for transparent signing/verification
 
-5. **Content Integrity** (`digest.go`)
+6. **Content Integrity** (`digest.go`)
    - Automatic Content-Digest header calculation when signing
    - Support for SHA-256 and SHA-512 digests
    - Body preservation during digest calculation
