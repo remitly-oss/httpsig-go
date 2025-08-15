@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	sfv "github.com/dunglas/httpsfv"
@@ -27,7 +28,6 @@ var (
 		RequiredMetadata:     []Metadata{MetaCreated, MetaKeyID},
 		DisallowedMetadata:   []Metadata{MetaAlgorithm}, // The algorithm should be looked up from the keyid not an explicit setting.
 		CreatedValidDuration: time.Minute * 5,           // Signatures must have been created within within the last 5 minutes
-		DateFieldSkew:        time.Minute,               // If the created parameter is present, the Date header cannot be more than a minute off.
 	}
 
 	// DefaultRequiredFields covers the request body with 'content-digest' the method and full URI.
@@ -35,6 +35,9 @@ var (
 	DefaultRequiredFields = Fields("content-digest", "@method", "@target-uri")
 
 	ctxKeyAddDebug = struct{}{}
+
+	defaultExpireSkew           = time.Minute
+	defaultCreatedValidDuration = 5 * time.Minute
 )
 
 // KeySpec is the per-key information needed to verify a signature.
@@ -72,7 +75,7 @@ type KeyFetcher interface {
 // VerifyProfile sets the parameters for a fully valid request or response.
 // A valid signature is a relatively easy accomplishment. Did the signature include all the important parts of the request? Did it use a strong enough algorithm? Was it signed 41 days ago?  There are choices to make about what constitutes a valid signed request or response beyond just a verified signature.
 type VerifyProfile struct {
-	SignatureLabel     string // Which signature this profile applies to. '*' applies to all
+	SignatureLabel     string // Which signature this profile applies to.
 	RequiredFields     []SignedField
 	RequiredMetadata   []Metadata
 	DisallowedMetadata []Metadata
@@ -81,9 +84,11 @@ type VerifyProfile struct {
 	// Timing enforcement options
 	DisableTimeEnforcement       bool          // If true do no time enforcement on any fields
 	DisableExpirationEnforcement bool          // If expiration is present default to enforce
-	CreatedValidDuration         time.Duration // Duration allowed for between time.Now and the created time
-	ExpiredSkew                  time.Duration // Maximum duration allowed between time.Now and the expired time
-	DateFieldSkew                time.Duration // Maximum duration allowed between Date field and created
+	CreatedValidDuration         time.Duration // Duration allowed for between time.Now and the created time. Default to 5 minutes.
+	ExpiredSkew                  time.Duration // Maximum duration allowed between time.Now and the expired time. Default to 1 minute.
+
+	// Control time for testing
+	nowTime func() time.Time
 }
 
 type VerifyResult struct {
@@ -123,6 +128,9 @@ func VerifyResponse(resp *http.Response, kf KeyFetcher, profile VerifyProfile) (
 func NewVerifier(kf KeyFetcher, profile VerifyProfile) (*Verifier, error) {
 	if kf == nil {
 		return nil, newError(ErrSigKeyFetch, "KeyFetcher cannot be nil")
+	}
+	if profile.nowTime == nil {
+		profile.nowTime = time.Now
 	}
 	return &Verifier{
 		keys:    kf,
@@ -190,13 +198,13 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 			SignatureBase: string(base.base),
 		}
 	}
-	keyspec, err := ver.verifySignature(hrr, sig, base)
+	keyspec, ks, err := ver.verifySignature(hrr, sig, base)
 	vr.KeySpecer = keyspec
 	if err != nil {
 		return vr, err
 	}
 
-	if err := ver.profile.validate(sig); err != nil {
+	if err := ver.profile.validate(sig, ks.Algo); err != nil {
 		return vr, err
 	}
 
@@ -248,7 +256,7 @@ func parseSignaturesFromRequest(headers http.Header) (signaturesSFV, error) {
 	return psd, nil
 }
 
-// unmarshalSignature unmarshals a signature from hhtp structured field value (sfv) format.
+// unmarshalSignature unmarshals a signature from http structured field value (sfv) format.
 func unmarshalSignature(sigs signaturesSFV, label string) (extractedSignature, error) {
 	sigInfo := extractedSignature{
 		Label: label,
@@ -286,7 +294,7 @@ func unmarshalSignature(sigs signaturesSFV, label string) (extractedSignature, e
 	for _, componentItem := range sigInputList.Items {
 		name, ok := componentItem.Value.(string)
 		if !ok {
-			return sigInfo, newError(ErrSigInvalidSignature, fmt.Sprintf("signature components must be string types"))
+			return sigInfo, newError(ErrSigInvalidSignature, "signature components must be string types")
 		}
 		cIDs = append(cIDs, componentID{
 			Name: name,
@@ -306,7 +314,7 @@ func unmarshalSignature(sigs signaturesSFV, label string) (extractedSignature, e
 	return sigInfo, nil
 }
 
-func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base signatureBase) (KeySpecer, error) {
+func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base signatureBase) (KeySpecer, KeySpec, error) {
 	var specer KeySpecer
 	var ks KeySpec
 	var err error
@@ -314,26 +322,32 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 	if slices.Contains(sig.Input.MetadataParams, MetaKeyID) {
 		keyid, err := sig.Input.MetadataValues.KeyID()
 		if err != nil {
-			return nil, newError(ErrSigKeyFetch, "Could not get keyid from signature metadata", err)
+			return nil, ks, newError(ErrSigKeyFetch, "Could not get keyid from signature metadata", err)
 		}
 
 		specer, err = ver.keys.FetchByKeyID(r.Context(), r.Headers(), keyid)
 		if err != nil {
-			return nil, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
+			return nil, ks, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
 		}
 		ks, err = specer.KeySpec()
 		if err != nil {
-			return nil, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
+			return nil, ks, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for keyid '%s'", keyid), err)
 		}
 	} else {
 		specer, err = ver.keys.Fetch(r.Context(), r.Headers(), sig.Input.MetadataValues)
 		if err != nil {
-			return specer, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
+			return specer, ks, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
 		}
 		ks, err = specer.KeySpec()
 		if err != nil {
-			return specer, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
+			return specer, ks, newError(ErrSigKeyFetch, fmt.Sprintf("Failed to fetch key for signature without a keyid and with label '%s'\n", sig.Label), err)
 		}
+	}
+
+	// Check the algorithm value matches the KeySpec if it was provided as metadata
+	signatureAlg, err := sig.Input.MetadataValues.Alg()
+	if err != nil && signatureAlg != "" && ks.Algo != Algorithm(signatureAlg) {
+		return specer, ks, newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Algorithm in signature metadata is '%s' but the KeySpec is for algorithm '%s'", signatureAlg, ks.Algo))
 	}
 
 	switch ks.Algo {
@@ -346,37 +360,37 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 			msgHash := sha512.Sum512(base.base)
 			err := rsa.VerifyPSS(rsapub, crypto.SHA512, msgHash[:], sig.Signature, opts)
 			if err != nil {
-				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, ks, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
-			return specer, nil
+			return specer, ks, nil
 		} else {
-			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, ks, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_RSA_v1_5_sha256:
 		if rsapub, ok := ks.PubKey.(*rsa.PublicKey); ok {
 			msgHash := sha256.Sum256(base.base)
 			err := rsa.VerifyPKCS1v15(rsapub, crypto.SHA256, msgHash[:], sig.Signature)
 			if err != nil {
-				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, ks, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
-			return specer, nil
+			return specer, ks, nil
 		} else {
-			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, ks, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires rsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_HMAC_SHA256:
 		if len(ks.Secret) == 0 {
-			return specer, newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
+			return specer, ks, newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
 		}
 		msgHash := hmac.New(sha256.New, ks.Secret)
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		calcualtedSignature := msgHash.Sum(nil)
 		if !hmac.Equal(calcualtedSignature, sig.Signature) {
-			return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+			return specer, ks, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 		}
 	case Algo_ECDSA_P256_SHA256:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
 			if len(sig.Signature) != 64 {
-				return specer, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 64 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
+				return specer, ks, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 64 bytes for algorithm '%s'", Algo_ECDSA_P256_SHA256))
 			}
 			msgHash := sha256.Sum256(base.base)
 			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
@@ -385,15 +399,15 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 			s := new(big.Int)
 			s.SetBytes(sig.Signature[32:64])
 			if !ecdsa.Verify(epub, msgHash[:], r, s) {
-				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, ks, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
-			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, ks, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_ECDSA_P384_SHA384:
 		if epub, ok := ks.PubKey.(*ecdsa.PublicKey); ok {
 			if len(sig.Signature) != 96 {
-				return specer, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P384_SHA384))
+				return specer, ks, newError(ErrSigInvalidSignature, fmt.Sprintf("Signature must be 96 bytes for algorithm '%s'", Algo_ECDSA_P384_SHA384))
 			}
 			msgHash := sha512.Sum384(base.base)
 			// Concatenate r and s to form the signature as per the spec. r and s and *not* ANS1 encoded.
@@ -402,26 +416,132 @@ func (ver *Verifier) verifySignature(r httpMessage, sig extractedSignature, base
 			s := new(big.Int)
 			s.SetBytes(sig.Signature[48:96])
 			if !ecdsa.Verify(epub, msgHash[:], r, s) {
-				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, ks, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
-			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
+			return specer, ks, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires *ecdsa.PublicKey but got type: %T", ks.PubKey))
 		}
 	case Algo_ED25519:
 		if edpubkey, ok := ks.PubKey.(ed25519.PublicKey); ok {
 			if !ed25519.Verify(edpubkey, base.base, sig.Signature) {
-				return specer, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
+				return specer, ks, newError(ErrSigVerification, fmt.Sprintf("Signature did not verify for algo '%s'", ks.Algo), err)
 			}
 		} else {
-			return specer, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires ed25519.PublicKey but got type: %T", ks.PubKey))
+			return specer, ks, newError(ErrSigPublicKey, fmt.Sprintf("Invalid public key. Requires ed25519.PublicKey but got type: %T", ks.PubKey))
 		}
 	default:
-		return specer, newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Invalid verification algorithm '%s'", ks.Algo))
+		return specer, ks, newError(ErrSigUnsupportedAlgorithm, fmt.Sprintf("Invalid verification algorithm '%s'", ks.Algo))
 	}
-	return specer, nil
+	return specer, ks, nil
 }
 
-func (vp VerifyProfile) validate(sig extractedSignature) error {
+func (vp VerifyProfile) now() time.Time {
+	if vp.nowTime == nil {
+		return time.Now()
+	}
+	return vp.nowTime()
+}
+
+// validate enforces the VeriryProfile settings are met for the given signature. This should only done after the signature is *verified*.
+func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error {
+	// Validate signature label
+	if vp.SignatureLabel != "" && sig.Label != vp.SignatureLabel {
+		return newError(ErrSigProfile, fmt.Sprintf("Signature label '%s' does not match required label '%s'", sig.Label, vp.SignatureLabel))
+	}
+
+	// Validate required fields are present in signature
+	if len(vp.RequiredFields) > 0 {
+		// Create a map of component names from the signature for efficient lookup
+		sigComponentNames := make(map[string]bool)
+		for _, component := range sig.Input.Components {
+			sigComponentNames[component.Name] = true
+		}
+
+		// Check that all required fields are present
+		for _, requiredField := range vp.RequiredFields {
+			fieldName := strings.ToLower(requiredField.Name)
+			if !sigComponentNames[fieldName] {
+				return newError(ErrSigProfile, fmt.Sprintf("Signature missing required field '%s'", requiredField.Name))
+			}
+		}
+	}
+
+	// Validate required metadata
+	for _, md := range vp.RequiredMetadata {
+		if !slices.Contains(sig.Input.MetadataParams, md) {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature missing required meta parameter '%s'", md))
+		}
+	}
+
+	// Validate disallowed metadata
+	for _, md := range vp.DisallowedMetadata {
+		if slices.Contains(sig.Input.MetadataParams, md) {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature contains disallowed meta parameter '%s'", md))
+		}
+	}
+
+	// Validate allowed algorithms
+	if len(vp.AllowedAlgorithms) > 0 {
+		if !slices.Contains(vp.AllowedAlgorithms, ksAlgo) {
+			return newError(ErrSigProfile, fmt.Sprintf("Algorithm '%s' is not in allowed algorithms list", ksAlgo))
+		}
+	}
+
+	return vp.validateTiming(sig, vp.now())
+}
+
+// validateTiming validates all the time based properties are within tolerance of the VerifyProfile. currentTime is passed in as a parameter to capture a stable time for all subsequent checks.
+func (vp VerifyProfile) validateTiming(sig extractedSignature, currentTime time.Time) error {
+	// Early return if time enforcement is disabled
+	if vp.DisableTimeEnforcement {
+		return nil
+	}
+
+	// Validate created time if present
+	if slices.Contains(sig.Input.MetadataParams, MetaCreated) {
+		createdTime, err := sig.Input.MetadataValues.Created()
+		if err != nil {
+			return newError(ErrSigProfile, "Failed to get created timestamp from signature metadata", err)
+		}
+
+		createdTimestamp := time.Unix(int64(createdTime), 0)
+
+		// Check if signature is too old (beyond CreatedValidDuration)
+		createDuration := vp.CreatedValidDuration
+		if createDuration == 0 {
+			createDuration = defaultCreatedValidDuration
+		}
+		if currentTime.Sub(createdTimestamp) > createDuration {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature created time %s is older than allowed duration %s", createdTimestamp, createDuration))
+		}
+
+		// Check if signature was created in the future (allow some clock skew)
+		allowedSkew := time.Minute // Default 1 minute clock skew allowance
+		if createdTimestamp.Sub(currentTime) > allowedSkew {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature created time %s is too far in the future", createdTimestamp))
+		}
+	}
+
+	// Validate expires time if present
+	if slices.Contains(sig.Input.MetadataParams, MetaExpires) && !vp.DisableExpirationEnforcement {
+		expiresTime, err := sig.Input.MetadataValues.Expires()
+		if err != nil {
+			return newError(ErrSigProfile, "Failed to get expires timestamp from signature metadata", err)
+		}
+
+		expiresTimestamp := time.Unix(int64(expiresTime), 0)
+
+		// Check if signature has expired
+		skew := vp.ExpiredSkew
+		if skew == 0 {
+			skew = defaultExpireSkew
+		}
+
+		if currentTime.Sub(expiresTimestamp) > skew {
+			return newError(ErrSigProfile, fmt.Sprintf("Signature expired at %s (now: %s, allowed skew: %s)", expiresTimestamp, currentTime, skew))
+		}
+	}
+
 	return nil
 }
 

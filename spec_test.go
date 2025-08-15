@@ -84,7 +84,7 @@ func TestSpecVerify(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			if tc.Skip {
-				t.Skip(fmt.Sprintf("Skipping test %s", tc.Name))
+				t.Skipf("Skipping test %s", tc.Name)
 			}
 
 			hrrtxt, err := os.Open(fmt.Sprintf("testdata/%s", tc.SignedRequestOrResonseFile))
@@ -96,7 +96,8 @@ func TestSpecVerify(t *testing.T) {
 				requiredKeyID: tc.Key.KeyID,
 				key:           tc.Key,
 			}, VerifyProfile{
-				SignatureLabel: fmt.Sprintf("sig-%s", tc.Name),
+				SignatureLabel:         fmt.Sprintf("sig-%s", tc.Name),
+				DisableTimeEnforcement: true,
 			})
 
 			var verifyErr error

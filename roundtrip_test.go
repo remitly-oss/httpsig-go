@@ -42,7 +42,10 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
-			Profile: createVerifyProfile("tst-rsa-pss"),
+			Profile: httpsig.VerifyProfile{
+				SignatureLabel:    "tst-rsa-pss",
+				AllowedAlgorithms: []httpsig.Algorithm{httpsig.Algo_RSA_PSS_SHA512},
+			},
 		},
 		{
 			Name:       "RSA-v15",
@@ -62,7 +65,10 @@ func TestRoundTrip(t *testing.T) {
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/key-rsa-v15.pub"),
 				},
 			}),
-			Profile: createVerifyProfile("tst-rsa-pss"),
+			Profile: httpsig.VerifyProfile{
+				SignatureLabel:    "tst-rsa-pss",
+				AllowedAlgorithms: []httpsig.Algorithm{httpsig.Algo_RSA_v1_5_sha256},
+			},
 		},
 		{
 			Name:      "HMAC_SHA256",

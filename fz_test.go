@@ -3,8 +3,12 @@ package httpsig
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/remitly-oss/httpsig-go/sigtest"
@@ -158,6 +162,14 @@ func FuzzExtractSignatures(f *testing.F) {
 			SignatureHeader:      "sig-b24=(\"@status\" \"content-type\" \"content-digest\" \"content-length\");created=1618884473;keyid=\"test-key-ecc-p256\"",
 			SignatureInputHeader: "sig-b24=:wNmSUAhwb5LxtOtOpNa6W5xj067m5hFrj0XQ4fvpaCLx0NKocgPquLgyahnzDnDAUy5eCdlYUEkLIj+32oiasw==:",
 		},
+		{"sig1=:dGVzdA==:", "sig1=(\"@method\",   \"@target-uri\");created=1618884473"},
+		{"sig1=:invalid-base64:", "sig1=(\"@method\");created=1618884473"},
+		{"sig1", "sig1=()"},
+		{"sig1=:dGVzdA==:, sig2=:dGVzdA==:", "sig1=(\"@method\"), sig2=(\"@path\")"},
+		{"sig1=invalid", "sig1=(\"@method\")"},
+		{"sig1=:dGVzdA==:", "sig1=invalid"},
+		{"=:dGVzdA==:", "=(\"@method\")"},
+		{"sig1=:dGVzdA==:", "sig1=("},
 	}
 
 	for _, tc := range testcases {
@@ -194,6 +206,74 @@ func FuzzExtractSignatures(f *testing.F) {
 				}
 				// Unhandled error
 				t.Error(err)
+			}
+		}
+	})
+}
+
+// FuzzComponentIDParsing tests component identifier parsing edge cases
+func FuzzComponentIDParsing(f *testing.F) {
+	testcases := []struct {
+		name       string
+		parameters map[string]string
+	}{
+		{"@method", nil},
+		{"@target-uri", nil},
+		{"@query-param", map[string]string{"name": "test"}},
+		{"content-digest", nil},
+		{"", nil},
+		{"@invalid-component", nil},
+		{"header-with-unicode-😀", nil},
+		{"@query-param", map[string]string{"name": ""}},
+		{"@query-param", map[string]string{"": "value"}},
+	}
+
+	for _, tc := range testcases {
+		params := ""
+		for k, v := range tc.parameters {
+			params += fmt.Sprintf(";%s=%s", k, v)
+		}
+		f.Add(tc.name, params)
+	}
+
+	f.Fuzz(func(t *testing.T, name, paramStr string) {
+		// Create a SignedField with fuzzed input
+		field := SignedField{Name: name}
+
+		// Parse parameters string into map
+		if paramStr != "" {
+			field.Parameters = make(map[string]any)
+			pairs := strings.Split(paramStr, ";")
+			for _, pair := range pairs {
+				if kv := strings.SplitN(pair, "=", 2); len(kv) == 2 {
+					field.Parameters[kv[0]] = kv[1]
+				}
+			}
+		}
+
+		// Convert to componentID - should not panic
+		cID := field.componentID()
+
+		// Try to get signature name and value
+		_, err := cID.signatureName()
+		if err != nil {
+			var sigErr *SignatureError
+			if !errors.As(err, &sigErr) {
+				t.Errorf("Expected SignatureError, got: %T", err)
+			}
+		}
+
+		req := httptest.NewRequest("GET",
+			"http://example.com/test?param=value", nil)
+		req.Header.Set("Content-Digest",
+			"sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:")
+		msg := httpMessage{Req: req}
+
+		_, err = cID.signatureValue(msg)
+		if err != nil {
+			var sigErr *SignatureError
+			if !errors.As(err, &sigErr) {
+				t.Errorf("Expected SignatureError, got: %T", err)
 			}
 		}
 	})
