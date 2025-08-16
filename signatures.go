@@ -9,7 +9,9 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/asn1"
 	"fmt"
+	"math/big"
 	"time"
 
 	sfv "github.com/dunglas/httpsfv"
@@ -47,6 +49,7 @@ type sigParameters struct {
 	Label      string
 	PrivateKey crypto.PrivateKey
 	Secret     []byte
+	Signer     crypto.Signer // TPM support
 }
 
 func sign(hrr httpMessage, sp sigParameters) error {
@@ -56,45 +59,74 @@ func sign(hrr httpMessage, sp sigParameters) error {
 	}
 
 	var sigBytes []byte
-	switch sp.Algo {
+	pkSigner := sp.Signer // Use crypto.Signer interface.
 
+	switch sp.Algo {
 	case Algo_RSA_PSS_SHA512:
-		if rsapk, ok := sp.PrivateKey.(*rsa.PrivateKey); ok {
-			msgHash := sha512.Sum512(base.base)
-			opts := &rsa.PSSOptions{
-				SaltLength: 64,
-				Hash:       crypto.SHA512,
+		if pkSigner == nil {
+			if rsapk, ok := sp.PrivateKey.(*rsa.PrivateKey); ok {
+				pkSigner = rsapk
+			} else {
+				return fmt.Errorf("Invalid private key. Requires *rsa.PrivateKey: %T", sp.PrivateKey)
 			}
-			sigBytes, err = rsa.SignPSS(rand.Reader, rsapk, crypto.SHA512, msgHash[:], opts)
-			if err != nil {
-				return err
-			}
-		} else {
-			return fmt.Errorf("Invalid private key. Requires rsa.PrivateKey: %T", sp.PrivateKey)
+		}
+
+		msgHash := sha512.Sum512(base.base)
+		opts := &rsa.PSSOptions{
+			SaltLength: 64,
+			Hash:       crypto.SHA512,
+		}
+		sigBytes, err = pkSigner.Sign(rand.Reader, msgHash[:], opts)
+		if err != nil {
+			return newError(ErrInternal, "Failed to sign RSA PSS", err)
 		}
 	case Algo_RSA_v1_5_sha256:
-		if rsapk, ok := sp.PrivateKey.(*rsa.PrivateKey); ok {
-			msgHash := sha256.Sum256(base.base)
-			sigBytes, err = rsa.SignPKCS1v15(rand.Reader, rsapk, crypto.SHA256, msgHash[:])
-			if err != nil {
-				return err
+		if pkSigner == nil {
+			if rsapk, ok := sp.PrivateKey.(*rsa.PrivateKey); ok {
+				pkSigner = rsapk
+			} else {
+				return fmt.Errorf("Invalid private key. Requires *rsa.PrivateKey: %T", sp.PrivateKey)
 			}
-		} else {
-			return fmt.Errorf("Invalid private key. Requires rsa.PrivateKey: %T", sp.PrivateKey)
+		}
+		msgHash := sha256.Sum256(base.base)
+		sigBytes, err = pkSigner.Sign(rand.Reader, msgHash[:], crypto.SHA256)
+		if err != nil {
+			return newError(ErrInternal, "Failed to sign RSA v1.5", err)
 		}
 	case Algo_ECDSA_P256_SHA256:
-		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
-			msgHash := sha256.Sum256(base.base)
-			r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
+		msgHash := sha256.Sum256(base.base)
+		if pkSigner == nil {
+			if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
+				// Use the native ecdsa.Sign method to avoid needing to decode ASN.1 response.
+				r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
+				if err != nil {
+					return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
+				}
+				// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
+				sigBytes = make([]byte, 64)
+				r.FillBytes(sigBytes[0:32])
+				s.FillBytes(sigBytes[32:64])
+			} else {
+				return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
+			}
+		} else {
+			// crypto.Signer for ECDSA returns the signature in ASN.1 format
+			asn1Sig, err := pkSigner.Sign(rand.Reader, msgHash[:], crypto.SHA256)
 			if err != nil {
 				return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
 			}
-			// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
+
+			// HTTP Signatures spec uses R|S concat instead of ASN.1. Have to decode the crypto.Sign result.
+			encSig := struct {
+				R, S *big.Int
+			}{}
+			_, err = asn1.Unmarshal(asn1Sig, &encSig)
+			if err != nil {
+				return newError(ErrInternal, "Failed to sign with ecdsa private key. Sign did not return ASN.1 signature", err)
+			}
 			sigBytes = make([]byte, 64)
-			r.FillBytes(sigBytes[0:32])
-			s.FillBytes(sigBytes[32:64])
-		} else {
-			return fmt.Errorf("Invalid private key. Requires *ecdsa.PrivateKey")
+			encSig.R.FillBytes(sigBytes[0:32])
+			encSig.S.FillBytes(sigBytes[32:64])
 		}
 	case Algo_ECDSA_P384_SHA384:
 		if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
