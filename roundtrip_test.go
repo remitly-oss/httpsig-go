@@ -16,6 +16,7 @@ func TestRoundTrip(t *testing.T) {
 	testcases := []struct {
 		Name                  string
 		PrivateKey            crypto.PrivateKey
+		Signer                crypto.Signer
 		MetaKeyID             string
 		Secret                []byte
 		SignProfile           httpsig.SigningProfile
@@ -110,6 +111,26 @@ func TestRoundTrip(t *testing.T) {
 			Profile: createVerifyProfile("tst-ecdsa"),
 		},
 		{
+			Name:      "ECDSA-p265-Signer",
+			Signer:    keyutil.MustReadPrivateKeyFileECDSA("testdata/test-key-ecc-p256.key"),
+			MetaKeyID: "test-key-ecdsa",
+			SignProfile: httpsig.SigningProfile{
+				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Fields:    httpsig.DefaultRequiredFields,
+				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:     "tst-ecdsa",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ecdsa": {
+					KeyID:  "test-key-ecds",
+					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
+				},
+			}),
+			Profile: createVerifyProfile("tst-ecdsa"),
+		},
+		{
 			Name:       "ECDSA-p384",
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p384.key"),
 			MetaKeyID:  "test-key-ecdsa",
@@ -178,6 +199,7 @@ func TestRoundTrip(t *testing.T) {
 			var signer *httpsig.Signer
 			sk := httpsig.SigningKey{
 				Key:       tc.PrivateKey,
+				Signer:    tc.Signer,
 				Secret:    tc.Secret,
 				MetaKeyID: tc.MetaKeyID,
 			}
