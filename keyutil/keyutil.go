@@ -74,7 +74,7 @@ func MustReadPrivateKeyFileECDSA(pkFile string) *ecdsa.PrivateKey {
 	if ecpk, ok := pk.(*ecdsa.PrivateKey); ok {
 		return ecpk
 	}
-	panic("Not ECDSA private key file")
+	panic(fmt.Sprintf("Not ECDSA private key file: %s", pkFile))
 }
 
 func MustReadPrivateKey(encodedPrivateKey []byte) crypto.PrivateKey {
