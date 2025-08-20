@@ -84,12 +84,16 @@ func Fields(fields ...string) []SignedField {
 type SigningKey struct {
 	Key    crypto.PrivateKey // private key for asymmetric algorithms
 	Secret []byte            // Secret to use for symmetric algorithms
-	Signer crypto.Signer     // crypto.Signer interface for TPMs and other use cases.
+	Opts   SigningKeyOpts    // Options for advanced signing use cases like TPMs.
 	// Meta fields
 	MetaKeyID string // 'keyid' - Only used if 'keyid' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile. Metadata.
 	MetaTag   string // 'tag'. Only used if 'tag' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile.
 }
 
+type SigningKeyOpts struct {
+	Signer       crypto.Signer // crypto.Signer interface for TPMs and other custom use cases.
+	ASN1ForECDSA bool          // Set to true to indicate the crypto.Signer returns ASN.1 formatted signatures for ECDSA algorithms. False (default) indicates ECDSA signatures are concatenated R and S parameters as per the HTTP Signatures spec.
+}
 type Signer struct {
 	profile SigningProfile
 	skey    SigningKey
@@ -147,7 +151,7 @@ func (s *Signer) Sign(req *http.Request) error {
 			Algo:       s.profile.Algorithm,
 			PrivateKey: s.skey.Key,
 			Secret:     s.skey.Secret,
-			Signer:     s.skey.Signer,
+			Opts:       s.skey.Opts,
 			Label:      s.profile.Label,
 		})
 }
@@ -167,7 +171,7 @@ func (s *Signer) SignResponse(resp *http.Response) error {
 			Algo:       s.profile.Algorithm,
 			PrivateKey: s.skey.Key,
 			Secret:     s.skey.Secret,
-			Signer:     s.skey.Signer,
+			Opts:       s.skey.Opts,
 			Label:      s.profile.Label,
 		})
 }
@@ -217,8 +221,8 @@ func (so SigningProfile) validate(skey SigningKey) error {
 	if so.Algorithm.symmetric() && len(skey.Secret) == 0 {
 		return newError(ErrInvalidSignatureOptions, "Missing required 'Secret' value in SigningKey")
 	}
-	if !so.Algorithm.symmetric() && skey.Key == nil && skey.Signer == nil {
-		return newError(ErrInvalidSignatureOptions, "Missing required 'Key' or 'Signer' value in SigningKey")
+	if !so.Algorithm.symmetric() && skey.Key == nil && skey.Opts.Signer == nil {
+		return newError(ErrInvalidSignatureOptions, "Missing required 'Key' or 'Opts.Signer' value in SigningKey")
 	}
 	if !isSafeString(so.Label) {
 		return fmt.Errorf("Invalid label name '%s'", so.Label)
