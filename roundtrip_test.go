@@ -2,6 +2,9 @@ package httpsig_test
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"io"
+	"math/big"
 	"testing"
 
 	"github.com/remitly-oss/httpsig-go"
@@ -91,7 +94,7 @@ func TestRoundTrip(t *testing.T) {
 			Profile: createVerifyProfile("sig1"),
 		},
 		{
-			Name:       "ECDSA-p265",
+			Name:       "ECDSA-p256",
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key"),
 			MetaKeyID:  "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
@@ -111,10 +114,35 @@ func TestRoundTrip(t *testing.T) {
 			Profile: createVerifyProfile("tst-ecdsa"),
 		},
 		{
-			Name: "ECDSA-p265-Signer-ASN1",
+			Name: "ECDSA-p256-Signer-ASN1",
 			SigningOpts: httpsig.SigningKeyOpts{
 				Signer:       keyutil.MustReadPrivateKeyFileECDSA("testdata/test-key-ecc-p256.key"),
 				ASN1ForECDSA: true,
+			},
+			MetaKeyID: "test-key-ecdsa",
+			SignProfile: httpsig.SigningProfile{
+				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Fields:    httpsig.DefaultRequiredFields,
+				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:     "tst-ecdsa",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ecdsa": {
+					KeyID:  "test-key-ecds",
+					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
+				},
+			}),
+			Profile: createVerifyProfile("tst-ecdsa"),
+		},
+		{
+			Name: "ECDSA-p256-Signer-NoASN1",
+			SigningOpts: httpsig.SigningKeyOpts{
+				Signer: &testSignerNoASN1{
+					PK:      keyutil.MustReadPrivateKeyFileECDSA("testdata/test-key-ecc-p256.key"),
+					SigSize: 64,
+				},
 			},
 			MetaKeyID: "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
@@ -158,6 +186,31 @@ func TestRoundTrip(t *testing.T) {
 			SigningOpts: httpsig.SigningKeyOpts{
 				Signer:       keyutil.MustReadPrivateKeyFileECDSA("testdata/test-key-ecc-p384.key"),
 				ASN1ForECDSA: true,
+			},
+			MetaKeyID: "test-key-ecdsa",
+			SignProfile: httpsig.SigningProfile{
+				Algorithm: httpsig.Algo_ECDSA_P384_SHA384,
+				Fields:    httpsig.DefaultRequiredFields,
+				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:     "tst-ecdsa",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ecdsa": {
+					KeyID:  "test-key-ecdsa",
+					Algo:   httpsig.Algo_ECDSA_P384_SHA384,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p384.pub"),
+				},
+			}),
+			Profile: createVerifyProfile("tst-ecdsa"),
+		},
+		{
+			Name: "ECDSA-p384-Signer-NoASN1",
+			SigningOpts: httpsig.SigningKeyOpts{
+				Signer: &testSignerNoASN1{
+					PK:      keyutil.MustReadPrivateKeyFileECDSA("testdata/test-key-ecc-p384.key"),
+					SigSize: 96,
+				},
 			},
 			MetaKeyID: "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
@@ -290,4 +343,29 @@ func createVerifyProfile(label string) httpsig.VerifyProfile {
 	vp := httpsig.DefaultVerifyProfile
 	vp.SignatureLabel = label
 	return vp
+}
+
+type testSignerNoASN1 struct {
+	PK      *ecdsa.PrivateKey
+	SigSize int
+}
+
+func (ts *testSignerNoASN1) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	r, s, err := ecdsa.Sign(rand, ts.PK, message)
+	if err != nil {
+		return nil, err
+	}
+	return ecdsaConcatRS(r, s, ts.SigSize), nil
+}
+
+func (ts *testSignerNoASN1) Public() crypto.PublicKey {
+	return ts.PK.PublicKey
+}
+
+func ecdsaConcatRS(r, s *big.Int, signatureSize int) []byte {
+	half := signatureSize / 2
+	sigBytes := make([]byte, signatureSize)
+	r.FillBytes(sigBytes[0:half])
+	s.FillBytes(sigBytes[half:signatureSize])
+	return sigBytes
 }
