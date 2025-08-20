@@ -108,7 +108,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 					return newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P256_SHA256), err)
 				}
 				// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
-				sigBytes = ecdsaConcatRS(r, s, 64)
+				sigBytes = ecdsaConcatRS(r, s, ecdsaP256SignatureSize)
 			} else {
 				return newError(ErrInternal, "Invalid private key. Requires *ecdsa.PrivateKey")
 			}
@@ -129,7 +129,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 					return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
 				}
 				// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
-				sigBytes = ecdsaConcatRS(r, s, 96)
+				sigBytes = ecdsaConcatRS(r, s, ecdsaP384SignatureSize)
 			} else {
 				return newError(ErrInternal, "Invalid private key. Requires *ecdsa.PrivateKey")
 			}
