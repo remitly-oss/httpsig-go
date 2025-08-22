@@ -5,6 +5,8 @@ package keyutil
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -66,6 +68,21 @@ func MustReadPrivateKeyFile(pkFile string) crypto.PrivateKey {
 		panic(err)
 	}
 	return pk
+}
+
+func MustReadPrivateKeyFileECDSA(pkFile string) *ecdsa.PrivateKey {
+	pk := MustReadPrivateKeyFile(pkFile)
+	if ecpk, ok := pk.(*ecdsa.PrivateKey); ok {
+		return ecpk
+	}
+	panic(fmt.Sprintf("Not ECDSA private key file: %s", pkFile))
+}
+func MustReadPrivateKeyFileED25519(pkFile string) ed25519.PrivateKey {
+	pk := MustReadPrivateKeyFile(pkFile)
+	if edpk, ok := pk.(ed25519.PrivateKey); ok {
+		return edpk
+	}
+	panic("Not ed25519 private key file")
 }
 
 func MustReadPrivateKey(encodedPrivateKey []byte) crypto.PrivateKey {

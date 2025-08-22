@@ -36,6 +36,28 @@ BznPJ5sSI1Jn+srosJB/GbEZ3Kg6PcEi+jODF9fdpNEaHGbbGdaVhJi1
 	signer.Sign(req)
 }
 
+func ExampleSigningKeyOpts() {
+	// Create your TPM instance. It must implement crypto.Signer
+	var tpm crypto.Signer
+
+	req := httptest.NewRequest("GET", "https://example.com/data", nil)
+
+	profile := httpsig.SigningProfile{
+		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+		Fields:    httpsig.DefaultRequiredFields,
+		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
+	}
+	skey := httpsig.SigningKey{
+		Opts: httpsig.SigningKeyOpts{
+			Signer: tpm,
+		},
+		MetaKeyID: "key123",
+	}
+
+	signer, _ := httpsig.NewSigner(profile, skey)
+	signer.Sign(req)
+}
+
 func ExampleVerify() {
 	pubkeyEncoded := `-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIUctKvU5L/eEYxua5Zlz0HIQJRQq
