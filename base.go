@@ -145,7 +145,7 @@ func calculateSignatureBase(msg httpMessage, bp sigBaseInput) (signatureBase, er
 	base.WriteString(fmt.Sprintf("\"%s\": %s", sigparams, paramsOut))
 	return signatureBase{
 		base:           []byte(base.String()),
-		signatureInput: paramsOut,
+		signatureInput: signatureParams,
 	}, nil
 }
 
@@ -218,11 +218,11 @@ func deriveComponentValueRequest(req *http.Request, component componentID) (stri
 	case "@query-param":
 		paramKey, found := component.Item.Params.Get("name")
 		if !found {
-			return "", newError(ErrInvalidSignatureOptions, fmt.Sprintf("@query-param specified but missing 'name' parameter to indicate which parameter."))
+			return "", newError(ErrInvalidSignatureOptions, "@query-param specified but missing 'name' parameter to indicate which parameter.")
 		}
 		paramName, ok := paramKey.(string)
 		if !ok {
-			return "", newError(ErrInvalidSignatureOptions, fmt.Sprintf("@query-param specified but the 'name' parameter must be a string to indicate which parameter."))
+			return "", newError(ErrInvalidSignatureOptions, "@query-param specified but the 'name' parameter must be a string to indicate which parameter.")
 		}
 		paramValue := req.URL.Query().Get(paramName)
 		// TODO support empty - is this still a string with a space in it?

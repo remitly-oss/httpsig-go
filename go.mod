@@ -1,6 +1,6 @@
 module github.com/remitly-oss/httpsig-go
 
-go 1.21.4
+go 1.22
 
 require (
 	github.com/dunglas/httpsfv v1.0.2

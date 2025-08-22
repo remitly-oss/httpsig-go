@@ -170,6 +170,10 @@ func FuzzExtractSignatures(f *testing.F) {
 		{"sig1=:dGVzdA==:", "sig1=invalid"},
 		{"=:dGVzdA==:", "=(\"@method\")"},
 		{"sig1=:dGVzdA==:", "sig1=("},
+		{
+			SignatureInputHeader: `tst-ecdsa-0=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-1=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-2=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-3=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-4=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-5=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-6=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa", tst-ecdsa-7=("content-digest" "@method" "@target-uri");created=1755899955;keyid="test-key-ecdsa"`,
+			SignatureHeader:      `tst-ecdsa-0=:ktNUTq0MYt1iIDU8AxBi39Nrw6vVLAD7BL1EMuHxtmpDatYx7CFxxFee1cPqE3hkOKknGnQgS6Umrv0ct3wq3A==:, tst-ecdsa-1=:XFoz0EbrdxZFhsvVi0xhRBI2F5NNaQ5SsdRUjmyBiaTqZvC7Ud15gD+AmTipZxyjx5iX9YNKDNAnILv0fViWHA==:, tst-ecdsa-2=:EmUtrfTosRFr1uIKCu89ggqpfUClw4La3C3esWuXYdcg7xntY5dpqoqFCwyrlwxHveLcBxoHcVp1trSGsUJGAA==:, tst-ecdsa-3=:jJw65CIeODTbYxTAqBPof9U70FU1+uL/k8GLLJR3YMOHbk5enJqi9GCI6Gpn7SUamw1d3u6YqUb9BYo2C1WdTA==:, tst-ecdsa-4=:yhFGqoxuKpzApUccnjspLYhneYXf9Y/CTNbrCrQuzRUf6OzDGJFxJB1deDwdLJzIGB2DnICNVtHc3Zp/MI5+jQ==:, tst-ecdsa-5=:jxZ+G1ZFY9yc0GyhTXG5vSKtHTEQ2Slacb6AJzV8lHuuoTJpn08eZeJijLXhiRzBNzHEoFc9PwcsKehIp5dGjA==:, tst-ecdsa-6=:HLFRyXXkrIZbRYEoVQl3aL1EpFtg52JkAK8wad+wHnehVFYzO3M7tyEpdGBcr/6ZpUr1rkc1J1Ru9wRa3WkqRQ==:, tst-ecdsa-7=:b7+mkQt02cvV/cucQcSn9J+lJ9/cRkWcVX8mAdNh+p3avD1ULj/hg0z7ZkgEnlfDuWaTskdu+CLncxseLsEIWQ==:`,
+		},
 	}
 
 	for _, tc := range testcases {
@@ -193,7 +197,7 @@ func FuzzExtractSignatures(f *testing.F) {
 		req.Header.Set("signature", sigHeader)
 		req.Header.Set("signature-input", sigInputHeader)
 
-		sigSFV, err := parseSignaturesFromRequest(req.Header)
+		sigSFV, err := parseSignaturesFromRequest(req.Header, false)
 		if err != nil {
 			return
 		}

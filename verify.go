@@ -175,7 +175,7 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 	}
 
 	/* parse and extract the signature */
-	sigsfv, err := parseSignaturesFromRequest(hrr.Headers())
+	sigsfv, err := parseSignaturesFromRequest(hrr.Headers(), false)
 	if err != nil {
 		return vr, err
 	}
@@ -229,29 +229,37 @@ type signaturesSFV struct {
 	Sigs      *sfv.Dictionary
 }
 
-func parseSignaturesFromRequest(headers http.Header) (signaturesSFV, error) {
-	psd := signaturesSFV{}
+func parseSignaturesFromRequest(headers http.Header, allowEmpty bool) (signaturesSFV, error) {
+	psd := signaturesSFV{
+		SigInputs: sfv.NewDictionary(),
+		Sigs:      sfv.NewDictionary(),
+	}
+
 	/* Pull signature and signature-input header */
 	sigHeader := headers.Get("signature")
-	if sigHeader == "" {
+	if sigHeader == "" && !allowEmpty {
 		return psd, newError(ErrNoSigMissingSignature, "Missing signature header")
 	}
 	sigInputHeader := headers.Get("signature-input")
-	if sigInputHeader == "" {
+	if sigInputHeader == "" && !allowEmpty {
 		return psd, newError(ErrNoSigMissingSignature, "Missing signature-input header")
 	}
 
 	/* Parse headers into their appropriate HTTP structured field values */
 	// signature-input must be a HTTP structured field value of type Dictionary.
 	var err error
-	psd.SigInputs, err = sfv.UnmarshalDictionary([]string{sigInputHeader})
-	if err != nil {
-		return psd, newError(ErrNoSigInvalidSignature, "Invalid signature-input header. Not a valid Dictionary", err)
+	if sigInputHeader != "" {
+		psd.SigInputs, err = sfv.UnmarshalDictionary([]string{sigInputHeader})
+		if err != nil {
+			return psd, newError(ErrNoSigInvalidSignature, "Invalid signature-input header. Not a valid Dictionary", err)
+		}
 	}
-	// signature must be a HTTP structured field value of type Dictionary.
-	psd.Sigs, err = sfv.UnmarshalDictionary([]string{sigHeader})
-	if err != nil {
-		return psd, newError(ErrNoSigInvalidSignature, "Invalid signature header. Not a valid Dictionary", err)
+	if sigHeader != "" {
+		// signature must be a HTTP structured field value of type Dictionary.
+		psd.Sigs, err = sfv.UnmarshalDictionary([]string{sigHeader})
+		if err != nil {
+			return psd, newError(ErrNoSigInvalidSignature, "Invalid signature header. Not a valid Dictionary", err)
+		}
 	}
 	return psd, nil
 }

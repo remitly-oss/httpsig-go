@@ -42,8 +42,8 @@ type MetadataProvider interface {
 }
 
 type signatureBase struct {
-	base           []byte // The full signature base. Use this as input to signing and verification
-	signatureInput string // The signature-input line
+	base           []byte        // The full signature base. Use this as input to signing and verification
+	signatureInput sfv.InnerList // The signature-input line
 }
 
 type sigParameters struct {
@@ -56,12 +56,45 @@ type sigParameters struct {
 }
 
 func sign(hrr httpMessage, sp sigParameters) error {
+	// get the signature base
 	base, err := calculateSignatureBase(hrr, sp.Base)
 	if err != nil {
 		return err
 	}
+	// create the signature from the base
+	sigBytes, err := createSignature(sp, base)
+	if err != nil {
+		return err
+	}
 
+	// Add it to the request
+	sigsSFV, err := parseSignaturesFromRequest(hrr.Headers(), true)
+	if err != nil {
+		return err
+	}
+
+	// Note this will overwrite an existing signature with the same label.
+	sigsSFV.SigInputs.Add(sp.Label, base.signatureInput)
+	sigsSFV.Sigs.Add(sp.Label, sfv.NewItem(sigBytes))
+
+	sigInput, err := sfv.Marshal(sigsSFV.SigInputs)
+	if err != nil {
+		return newError(ErrInternal, "Failed to marshal signature-input for http header value", err)
+	}
+	sigs, err := sfv.Marshal(sigsSFV.Sigs)
+	if err != nil {
+		return newError(ErrInternal, "Failed to marshal signature for http header value.", err)
+	}
+
+	hrr.Headers().Set("Signature-Input", sigInput)
+	hrr.Headers().Set("Signature", sigs)
+
+	return nil
+}
+
+func createSignature(sp sigParameters, base signatureBase) (sig []byte, e error) {
 	var sigBytes []byte
+	var err error
 	pkSigner := sp.Opts.Signer // Use crypto.Signer interface if set.
 
 	// Use the crypto.Signer generic `Sign` method if crypto.Signer is provided in the SigningKeyOpts
@@ -72,7 +105,7 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			if rsapk, ok := sp.PrivateKey.(*rsa.PrivateKey); ok {
 				pkSigner = rsapk
 			} else {
-				return newError(ErrInternal, fmt.Sprintf("Invalid private key. Requires *rsa.PrivateKey: %T", sp.PrivateKey))
+				return nil, newError(ErrInternal, fmt.Sprintf("Invalid private key. Requires *rsa.PrivateKey: %T", sp.PrivateKey))
 			}
 		}
 
@@ -83,20 +116,20 @@ func sign(hrr httpMessage, sp sigParameters) error {
 		}
 		sigBytes, err = pkSigner.Sign(rand.Reader, msgHash[:], opts)
 		if err != nil {
-			return newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_RSA_PSS_SHA512), err)
+			return nil, newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_RSA_PSS_SHA512), err)
 		}
 	case Algo_RSA_v1_5_sha256:
 		if pkSigner == nil {
 			if rsapk, ok := sp.PrivateKey.(*rsa.PrivateKey); ok {
 				pkSigner = rsapk
 			} else {
-				return newError(ErrInternal, fmt.Sprintf("Invalid private key. Requires *rsa.PrivateKey: %T", sp.PrivateKey))
+				return nil, newError(ErrInternal, fmt.Sprintf("Invalid private key. Requires *rsa.PrivateKey: %T", sp.PrivateKey))
 			}
 		}
 		msgHash := sha256.Sum256(base.base)
 		sigBytes, err = pkSigner.Sign(rand.Reader, msgHash[:], crypto.SHA256)
 		if err != nil {
-			return newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_RSA_v1_5_sha256), err)
+			return nil, newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_RSA_v1_5_sha256), err)
 		}
 	case Algo_ECDSA_P256_SHA256:
 		msgHash := sha256.Sum256(base.base)
@@ -105,19 +138,19 @@ func sign(hrr httpMessage, sp sigParameters) error {
 				// Use the native ecdsa.Sign method to avoid needing to decode ASN.1 result.
 				r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
 				if err != nil {
-					return newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P256_SHA256), err)
+					return nil, newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P256_SHA256), err)
 				}
 				// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
 				sigBytes = ecdsaConcatRS(r, s, ecdsaP256SignatureSize)
 			} else {
-				return newError(ErrInternal, "Invalid private key. Requires *ecdsa.PrivateKey")
+				return nil, newError(ErrInternal, "Invalid private key. Requires *ecdsa.PrivateKey")
 			}
 		} else {
 			// crypto.Signer for ECDSA may return the signature in ASN.1 format
 			sigBytes, err = pkSigner.Sign(rand.Reader, msgHash[:], crypto.SHA256)
 			sigBytes, err = sp.ecdsaHandleASN1(err, sigBytes, ecdsaP256SignatureSize)
 			if err != nil {
-				return newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P256_SHA256), err)
+				return nil, newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P256_SHA256), err)
 			}
 		}
 	case Algo_ECDSA_P384_SHA384:
@@ -126,19 +159,19 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			if eccpk, ok := sp.PrivateKey.(*ecdsa.PrivateKey); ok {
 				r, s, err := ecdsa.Sign(rand.Reader, eccpk, msgHash[:])
 				if err != nil {
-					return newError(ErrInternal, "Failed to sign with ecdsa private key", err)
+					return nil, newError(ErrInternal, "Failed to sign with ecdsa private key", err)
 				}
 				// Concatenate r and s to make the signature as per the spec. r and s are *not* encoded in ASN1 format
 				sigBytes = ecdsaConcatRS(r, s, ecdsaP384SignatureSize)
 			} else {
-				return newError(ErrInternal, "Invalid private key. Requires *ecdsa.PrivateKey")
+				return nil, newError(ErrInternal, "Invalid private key. Requires *ecdsa.PrivateKey")
 			}
 		} else {
 			// crypto.Signer for ECDSA may return the signature in ASN.1 format
 			sigBytes, err = pkSigner.Sign(rand.Reader, msgHash[:], crypto.SHA384)
 			sigBytes, err = sp.ecdsaHandleASN1(err, sigBytes, ecdsaP384SignatureSize)
 			if err != nil {
-				return newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P384_SHA384), err)
+				return nil, newError(ErrInternal, fmt.Sprintf("Failed to sign algorithm '%s'", Algo_ECDSA_P384_SHA384), err)
 			}
 		}
 	case Algo_ED25519:
@@ -146,34 +179,27 @@ func sign(hrr httpMessage, sp sigParameters) error {
 			if edpk, ok := sp.PrivateKey.(ed25519.PrivateKey); ok {
 				sigBytes = ed25519.Sign(edpk, base.base)
 			} else {
-				return newError(ErrInternal, "Invalid private key. Requires ed25519.PrivateKey")
+				return nil, newError(ErrInternal, "Invalid private key. Requires ed25519.PrivateKey")
 			}
 		} else {
 			// No prehash function per the spec.
 			sigBytes, err = pkSigner.Sign(nil, base.base, crypto.Hash(0))
 			if err != nil {
-				return newError(ErrInternal, fmt.Sprintf("Failed to sign with crypto.Signer. Algorithm '%s'", Algo_ED25519), err)
+				return nil, newError(ErrInternal, fmt.Sprintf("Failed to sign with crypto.Signer. Algorithm '%s'", Algo_ED25519), err)
 			}
 		}
 	case Algo_HMAC_SHA256:
 		if len(sp.Secret) == 0 {
-			return newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
+			return nil, newError(ErrInvalidSignatureOptions, fmt.Sprintf("No secret provided for symmetric algorithm '%s'", Algo_HMAC_SHA256))
 		}
 		msgHash := hmac.New(sha256.New, sp.Secret)
 		msgHash.Write(base.base) // write does not return an error per hash.Hash documentation
 		sigBytes = msgHash.Sum(nil)
 	default:
-		return newError(ErrInvalidSignatureOptions, fmt.Sprintf("Signing algorithm not supported: '%s'", sp.Algo))
+		return nil, newError(ErrInvalidSignatureOptions, fmt.Sprintf("Signing algorithm not supported: '%s'", sp.Algo))
 	}
-	sigField := sfv.NewDictionary()
-	sigField.Add(sp.Label, sfv.NewItem(sigBytes))
-	signature, err := sfv.Marshal(sigField)
-	if err != nil {
-		return newError(ErrInternal, fmt.Sprintf("Failed to marshal signature for label '%s'", sp.Label), err)
-	}
-	hrr.Headers().Set("Signature-Input", fmt.Sprintf("%s=%s", sp.Label, base.signatureInput))
-	hrr.Headers().Set("Signature", signature)
-	return nil
+
+	return sigBytes, nil
 }
 
 // ecdsaHandleASN1 returns the R | S concatenated signature. If sigParameters expect an ASN1 encoded signature it will decode it first. 'origErr' can be passed in to avoid an extra error check step.
