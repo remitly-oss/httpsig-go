@@ -3,6 +3,7 @@ package httpsig_test
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"fmt"
 	"io"
 	"math/big"
 	"testing"
@@ -334,6 +335,122 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatal("Expected error")
 			}
 			t.Logf("%+v\n", vf)
+		})
+
+	}
+}
+
+func TestRoundTripMultiSig(t *testing.T) {
+
+	testcases := []struct {
+		Name                  string
+		NumberOfSignatures    int
+		PrivateKey            crypto.PrivateKey
+		SigningOpts           httpsig.SigningKeyOpts
+		MetaKeyID             string
+		Secret                []byte
+		SignProfile           httpsig.SigningProfile
+		RequestFile           string
+		Keys                  httpsig.KeyFetcher
+		Profile               httpsig.VerifyProfile
+		ExpectedErrCodeVerify httpsig.ErrCode
+	}{
+		{
+			Name:               "RSA-PSS",
+			NumberOfSignatures: 2,
+			PrivateKey:         keyutil.MustReadPrivateKeyFile("testdata/test-key-rsa-pss.key"),
+			MetaKeyID:          "test-key-rsa",
+			SignProfile: httpsig.SigningProfile{
+				Algorithm: httpsig.Algo_RSA_PSS_SHA512,
+				Fields:    httpsig.DefaultRequiredFields,
+				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:     "tst-rsa-pss-%d",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-rsa": {
+					KeyID:  "test-key-rsa",
+					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
+				},
+			}),
+			Profile: httpsig.VerifyProfile{
+				SignatureLabel:    "tst-rsa-pss-%d",
+				AllowedAlgorithms: []httpsig.Algorithm{httpsig.Algo_RSA_PSS_SHA512},
+			},
+		},
+		{
+			Name:               "ECDSA-p256",
+			NumberOfSignatures: 8,
+			PrivateKey:         keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key"),
+			MetaKeyID:          "test-key-ecdsa",
+			SignProfile: httpsig.SigningProfile{
+				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Fields:    httpsig.DefaultRequiredFields,
+				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+				Label:     "tst-ecdsa-%d",
+			},
+			RequestFile: "rfc-test-request.txt",
+			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+				"test-key-ecdsa": {
+					KeyID:  "test-key-ecds",
+					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
+				},
+			}),
+			Profile: createVerifyProfile("tst-ecdsa-%d"),
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.Name, func(t *testing.T) {
+			req := sigtest.ReadRequest(t, tc.RequestFile)
+
+			for i := range tc.NumberOfSignatures {
+				var signer *httpsig.Signer
+				sk := httpsig.SigningKey{
+					Key:       tc.PrivateKey,
+					Opts:      tc.SigningOpts,
+					Secret:    tc.Secret,
+					MetaKeyID: tc.MetaKeyID,
+				}
+
+				sp := tc.SignProfile
+				sp.Label = fmt.Sprintf(sp.Label, i)
+				signer, err := httpsig.NewSigner(sp, sk)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = signer.Sign(req)
+				if err != nil {
+					t.Fatalf("%#v", err)
+				}
+			}
+
+			t.Log(req.Header.Get("Signature-Input"))
+			t.Log(req.Header.Get("Signature"))
+
+			for i := range tc.NumberOfSignatures {
+				vpf := tc.Profile
+				vpf.SignatureLabel = fmt.Sprintf(vpf.SignatureLabel, i)
+				ver, err := httpsig.NewVerifier(tc.Keys, vpf)
+				if err != nil {
+					t.Fatal(err)
+				}
+				vf, err := ver.Verify(req)
+				if err != nil {
+					if tc.ExpectedErrCodeVerify != "" {
+						if sigerr, ok := err.(*httpsig.SignatureError); ok {
+							sigtest.Diff(t, tc.ExpectedErrCodeVerify, sigerr.Code, "Wrong err code")
+						}
+					} else {
+						t.Fatalf("%#v", err)
+					}
+				} else if tc.ExpectedErrCodeVerify != "" {
+					t.Fatal("Expected error")
+				}
+				t.Logf("%+v\n", vf)
+			}
 		})
 
 	}
