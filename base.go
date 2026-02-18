@@ -244,5 +244,5 @@ func deriveTargetURI(req *http.Request) string {
 		scheme = "http"
 	}
 
-	return fmt.Sprintf("%s://%s%s%s", scheme, req.Host, req.URL.RawPath, req.URL.RawQuery)
+	return fmt.Sprintf("%s://%s%s", scheme, req.Host, req.URL.RequestURI())
 }
