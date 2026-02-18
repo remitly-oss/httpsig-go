@@ -13,8 +13,10 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"testing"
 	"time"
 
 	sfv "github.com/dunglas/httpsfv"
@@ -551,6 +553,57 @@ func (vp VerifyProfile) validateTiming(sig extractedSignature, currentTime time.
 	}
 
 	return nil
+}
+
+func TestDeriveTargetURI(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		expected string
+	}{
+		{
+			name:     "simple path no query",
+			url:      "https://example.com/path",
+			expected: "https://example.com/path",
+		},
+		{
+			name:     "path with query string",
+			url:      "https://example.com/path?foo=bar",
+			expected: "https://example.com/path?foo=bar",
+		},
+		{
+			name:     "path with multiple query params",
+			url:      "https://example.com/data?name=value&other=123",
+			expected: "https://example.com/data?name=value&other=123",
+		},
+		{
+			name:     "root path with query",
+			url:      "https://example.com/?query=test",
+			expected: "https://example.com/?query=test",
+		},
+		{
+			name:     "nested path no query",
+			url:      "https://example.com/api/v1/users",
+			expected: "https://example.com/api/v1/users",
+		},
+		{
+			name:     "empty query string preserved",
+			url:      "https://example.com/path?",
+			expected: "https://example.com/path?",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// httptest.NewRequest sets req.TLS for https URLs
+			req := httptest.NewRequest("GET", tc.url, nil)
+
+			got := deriveTargetURI(req)
+			if got != tc.expected {
+				t.Errorf("deriveTargetURI() = %q, want %q", got, tc.expected)
+			}
+		})
+	}
 }
 
 type metadataProviderFromParams struct {

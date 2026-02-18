@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an implementation of HTTP Message Signatures per RFC 9421. The library provides functionality for signing and verifying HTTP requests and responses using various cryptographic algorithms.
 
+**Module:** `github.com/remitly-oss/httpsig-go`
+**Go Version:** 1.22+
+
 ## Development Commands
 
 ### Testing
@@ -34,6 +37,8 @@ This is an implementation of HTTP Message Signatures per RFC 9421. The library p
    - `Signer` struct orchestrates request/response signing
    - `SigningProfile` defines what fields and metadata to include
    - `SigningKey` holds cryptographic material and metadata
+   - `SigningKeyOpts` supports custom `crypto.Signer` implementations (e.g., TPM, HSM)
+   - Supports multiple signatures on a single message
    - Supports asymmetric (RSA, ECDSA, Ed25519) and symmetric (HMAC) algorithms
 
 2. **Accept-Signature Support** (`accept.go`)
