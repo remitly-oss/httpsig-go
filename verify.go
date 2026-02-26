@@ -612,42 +612,60 @@ type metadataProviderFromParams struct {
 
 func (mp metadataProviderFromParams) Created() (int, error) {
 	if val, ok := mp.Params.Get(string(MetaCreated)); ok {
-		return int(val.(int64)), nil
+		if intVal, ok := val.(int64); ok {
+			return int(intVal), nil
+		}
+		return 0, newError(ErrInvalidMetadata, fmt.Sprintf("created parameter has invalid type %T, expected int64", val))
 	}
 	return 0, fmt.Errorf("No created value")
 }
 
 func (mp metadataProviderFromParams) Expires() (int, error) {
 	if val, ok := mp.Params.Get(string(MetaExpires)); ok {
-		return int(val.(int64)), nil
+		if intVal, ok := val.(int64); ok {
+			return int(intVal), nil
+		}
+		return 0, newError(ErrInvalidMetadata, fmt.Sprintf("expires parameter has invalid type %T, expected int64", val))
 	}
 	return 0, fmt.Errorf("No expires value")
 }
 
 func (mp metadataProviderFromParams) Nonce() (string, error) {
 	if val, ok := mp.Params.Get(string(MetaNonce)); ok {
-		return val.(string), nil
+		if strVal, ok := val.(string); ok {
+			return strVal, nil
+		}
+		return "", newError(ErrInvalidMetadata, fmt.Sprintf("nonce parameter has invalid type %T, expected string", val))
 	}
 	return "", fmt.Errorf("No nonce value")
 }
 
 func (mp metadataProviderFromParams) Alg() (string, error) {
 	if val, ok := mp.Params.Get(string(MetaAlgorithm)); ok {
-		return val.(string), nil
+		if strVal, ok := val.(string); ok {
+			return strVal, nil
+		}
+		return "", newError(ErrInvalidMetadata, fmt.Sprintf("alg parameter has invalid type %T, expected string", val))
 	}
 	return "", fmt.Errorf("No alg value")
 }
 
 func (mp metadataProviderFromParams) KeyID() (string, error) {
 	if val, ok := mp.Params.Get(string(MetaKeyID)); ok {
-		return val.(string), nil
+		if strVal, ok := val.(string); ok {
+			return strVal, nil
+		}
+		return "", newError(ErrInvalidMetadata, fmt.Sprintf("keyid parameter has invalid type %T, expected string", val))
 	}
 	return "", fmt.Errorf("No keyid value")
 }
 
 func (mp metadataProviderFromParams) Tag() (string, error) {
 	if val, ok := mp.Params.Get(string(MetaTag)); ok {
-		return val.(string), nil
+		if strVal, ok := val.(string); ok {
+			return strVal, nil
+		}
+		return "", newError(ErrInvalidMetadata, fmt.Sprintf("tag parameter has invalid type %T, expected string", val))
 	}
 	return "", fmt.Errorf("No tag value")
 }
