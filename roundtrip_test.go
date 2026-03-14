@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	"github.com/remitly-oss/httpsig-go"
+	"github.com/remitly-oss/httpsig-go/key"
 	"github.com/remitly-oss/httpsig-go/keyman"
 	"github.com/remitly-oss/httpsig-go/keyutil"
 	"github.com/remitly-oss/httpsig-go/sigtest"
+	"github.com/remitly-oss/httpsig-go/types"
 )
 
 // TestRoundTrip tests that the signing code can be verified by the verify code.
@@ -25,7 +27,7 @@ func TestRoundTrip(t *testing.T) {
 		Secret                []byte
 		SignProfile           httpsig.SigningProfile
 		RequestFile           string
-		Keys                  httpsig.KeyFetcher
+		Keys                  key.KeyFetcher
 		Profile               httpsig.VerifyProfile
 		ExpectedErrCodeVerify httpsig.ErrCode
 	}{
@@ -34,22 +36,22 @@ func TestRoundTrip(t *testing.T) {
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-rsa-pss.key"),
 			MetaKeyID:  "test-key-rsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_RSA_PSS_SHA512,
+				Algorithm: types.Algo_RSA_PSS_SHA512,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-rsa-pss",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-rsa": {
 					KeyID:  "test-key-rsa",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
 			Profile: httpsig.VerifyProfile{
 				SignatureLabel:    "tst-rsa-pss",
-				AllowedAlgorithms: []httpsig.Algorithm{httpsig.Algo_RSA_PSS_SHA512},
+				AllowedAlgorithms: []types.Algorithm{types.Algo_RSA_PSS_SHA512},
 			},
 		},
 		{
@@ -57,22 +59,22 @@ func TestRoundTrip(t *testing.T) {
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/key-rsa-v15.key"),
 			MetaKeyID:  "test-key-rsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_RSA_v1_5_sha256,
+				Algorithm: types.Algo_RSA_v1_5_sha256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-rsa-pss",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-rsa": {
 					KeyID:  "test-key-rsa",
-					Algo:   httpsig.Algo_RSA_v1_5_sha256,
+					Algo:   types.Algo_RSA_v1_5_sha256,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/key-rsa-v15.pub"),
 				},
 			}),
 			Profile: httpsig.VerifyProfile{
 				SignatureLabel:    "tst-rsa-pss",
-				AllowedAlgorithms: []httpsig.Algorithm{httpsig.Algo_RSA_v1_5_sha256},
+				AllowedAlgorithms: []types.Algorithm{types.Algo_RSA_v1_5_sha256},
 			},
 		},
 		{
@@ -80,15 +82,15 @@ func TestRoundTrip(t *testing.T) {
 			Secret:    sigtest.MustReadFile("testdata/test-shared-secret"),
 			MetaKeyID: "test-key-shared",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_HMAC_SHA256,
+				Algorithm: types.Algo_HMAC_SHA256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-shared": {
 					KeyID:  "test-key-shared",
-					Algo:   httpsig.Algo_HMAC_SHA256,
+					Algo:   types.Algo_HMAC_SHA256,
 					Secret: sigtest.MustReadFile("testdata/test-shared-secret"),
 				},
 			}),
@@ -99,16 +101,16 @@ func TestRoundTrip(t *testing.T) {
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key"),
 			MetaKeyID:  "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Algorithm: types.Algo_ECDSA_P256_SHA256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecds",
-					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					Algo:   types.Algo_ECDSA_P256_SHA256,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
 				},
 			}),
@@ -122,16 +124,16 @@ func TestRoundTrip(t *testing.T) {
 			},
 			MetaKeyID: "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Algorithm: types.Algo_ECDSA_P256_SHA256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecds",
-					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					Algo:   types.Algo_ECDSA_P256_SHA256,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
 				},
 			}),
@@ -147,16 +149,16 @@ func TestRoundTrip(t *testing.T) {
 			},
 			MetaKeyID: "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Algorithm: types.Algo_ECDSA_P256_SHA256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecds",
-					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					Algo:   types.Algo_ECDSA_P256_SHA256,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
 				},
 			}),
@@ -167,16 +169,16 @@ func TestRoundTrip(t *testing.T) {
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p384.key"),
 			MetaKeyID:  "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P384_SHA384,
+				Algorithm: types.Algo_ECDSA_P384_SHA384,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecdsa",
-					Algo:   httpsig.Algo_ECDSA_P384_SHA384,
+					Algo:   types.Algo_ECDSA_P384_SHA384,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p384.pub"),
 				},
 			}),
@@ -190,16 +192,16 @@ func TestRoundTrip(t *testing.T) {
 			},
 			MetaKeyID: "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P384_SHA384,
+				Algorithm: types.Algo_ECDSA_P384_SHA384,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecdsa",
-					Algo:   httpsig.Algo_ECDSA_P384_SHA384,
+					Algo:   types.Algo_ECDSA_P384_SHA384,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p384.pub"),
 				},
 			}),
@@ -215,16 +217,16 @@ func TestRoundTrip(t *testing.T) {
 			},
 			MetaKeyID: "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P384_SHA384,
+				Algorithm: types.Algo_ECDSA_P384_SHA384,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecdsa",
-					Algo:   httpsig.Algo_ECDSA_P384_SHA384,
+					Algo:   types.Algo_ECDSA_P384_SHA384,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p384.pub"),
 				},
 			}),
@@ -235,16 +237,16 @@ func TestRoundTrip(t *testing.T) {
 			PrivateKey: keyutil.MustReadPrivateKeyFile("testdata/test-key-ed25519.key"),
 			MetaKeyID:  "test-key-ed",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ED25519,
+				Algorithm: types.Algo_ED25519,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ed",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ed": {
 					KeyID:  "test-key-ed",
-					Algo:   httpsig.Algo_ED25519,
+					Algo:   types.Algo_ED25519,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
 				},
 			}),
@@ -257,16 +259,16 @@ func TestRoundTrip(t *testing.T) {
 			},
 			MetaKeyID: "test-key-ed",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ED25519,
+				Algorithm: types.Algo_ED25519,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ed",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ed": {
 					KeyID:  "test-key-ed",
-					Algo:   httpsig.Algo_ED25519,
+					Algo:   types.Algo_ED25519,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
 				},
 			}),
@@ -278,16 +280,16 @@ func TestRoundTrip(t *testing.T) {
 			MetaKeyID:  "test-key-ed",
 			SignProfile: httpsig.SigningProfile{
 
-				Algorithm: httpsig.Algo_ED25519,
+				Algorithm: types.Algo_ED25519,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-content-digest",
 			},
 			RequestFile: "request_bad_digest.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ed": {
 					KeyID:  "test-key-ed",
-					Algo:   httpsig.Algo_ED25519,
+					Algo:   types.Algo_ED25519,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ed25519.pub"),
 				},
 			}),
@@ -351,7 +353,7 @@ func TestRoundTripMultiSig(t *testing.T) {
 		Secret                []byte
 		SignProfile           httpsig.SigningProfile
 		RequestFile           string
-		Keys                  httpsig.KeyFetcher
+		Keys                  key.KeyFetcher
 		Profile               httpsig.VerifyProfile
 		ExpectedErrCodeVerify httpsig.ErrCode
 	}{
@@ -361,22 +363,22 @@ func TestRoundTripMultiSig(t *testing.T) {
 			PrivateKey:         keyutil.MustReadPrivateKeyFile("testdata/test-key-rsa-pss.key"),
 			MetaKeyID:          "test-key-rsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_RSA_PSS_SHA512,
+				Algorithm: types.Algo_RSA_PSS_SHA512,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-rsa-pss-%d",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-rsa": {
 					KeyID:  "test-key-rsa",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
 			Profile: httpsig.VerifyProfile{
 				SignatureLabel:    "tst-rsa-pss-%d",
-				AllowedAlgorithms: []httpsig.Algorithm{httpsig.Algo_RSA_PSS_SHA512},
+				AllowedAlgorithms: []types.Algorithm{types.Algo_RSA_PSS_SHA512},
 			},
 		},
 		{
@@ -385,16 +387,16 @@ func TestRoundTripMultiSig(t *testing.T) {
 			PrivateKey:         keyutil.MustReadPrivateKeyFile("testdata/test-key-ecc-p256.key"),
 			MetaKeyID:          "test-key-ecdsa",
 			SignProfile: httpsig.SigningProfile{
-				Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+				Algorithm: types.Algo_ECDSA_P256_SHA256,
 				Fields:    httpsig.DefaultRequiredFields,
 				Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
 				Label:     "tst-ecdsa-%d",
 			},
 			RequestFile: "rfc-test-request.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-ecdsa": {
 					KeyID:  "test-key-ecds",
-					Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+					Algo:   types.Algo_ECDSA_P256_SHA256,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-ecc-p256.pub"),
 				},
 			}),
