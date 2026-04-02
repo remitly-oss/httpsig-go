@@ -2,10 +2,12 @@ package httpsig
 
 import (
 	"errors"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/remitly-oss/httpsig-go/key"
 	"github.com/remitly-oss/httpsig-go/sigtest"
 )
 
@@ -15,6 +17,7 @@ func TestValidateProfile(t *testing.T) {
 		Sig         extractedSignature
 		Profile     VerifyProfile
 		KeySpecAlgo Algorithm
+		KeySpec     KeySpec
 		Expected    ErrCode // Expected ErrCode if an error. Empty string if expecting no error
 		ExpectedMsg string
 	}{
@@ -465,11 +468,75 @@ func TestValidateProfile(t *testing.T) {
 			Expected:    ErrSigProfile,
 			ExpectedMsg: "Signature missing required meta parameter 'created'",
 		},
+		// Identity validation tests — these pass a KeySpec directly via the table's KeySpec field.
+		{
+			Name: "VerifyIdentity_Trusted",
+			Sig:  extractedSignature{Label: "sig1", Signature: []byte{}, Input: sigBaseInput{MetadataValues: nil}},
+			Profile: VerifyProfile{
+				VerifyIdentity: true,
+				TrustedIssuers: []TrustedIssuer{
+					{IssuerType: key.IssuerIDP, Issuer: "https://idp.example.com"},
+				},
+				DisableTimeEnforcement: true,
+			},
+			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
+			KeySpec: KeySpec{
+				Identity: key.KeyIdentity{IssuerType: key.IssuerIDP, Issuer: "https://idp.example.com"},
+			},
+			Expected: ErrCode(""),
+		},
+		{
+			Name: "VerifyIdentity_Untrusted",
+			Sig:  extractedSignature{Label: "sig1", Signature: []byte{}, Input: sigBaseInput{MetadataValues: nil}},
+			Profile: VerifyProfile{
+				VerifyIdentity: true,
+				TrustedIssuers: []TrustedIssuer{
+					{IssuerType: key.IssuerIDP, Issuer: "https://idp.example.com"},
+				},
+				DisableTimeEnforcement: true,
+			},
+			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
+			KeySpec: KeySpec{
+				Identity: key.KeyIdentity{IssuerType: key.IssuerIDP, Issuer: "https://evil.example.com"},
+			},
+			Expected:    ErrSigProfile,
+			ExpectedMsg: "not in the trusted issuers list",
+		},
+		{
+			Name: "VerifyIdentity_WrongType",
+			Sig:  extractedSignature{Label: "sig1", Signature: []byte{}, Input: sigBaseInput{MetadataValues: nil}},
+			Profile: VerifyProfile{
+				VerifyIdentity: true,
+				TrustedIssuers: []TrustedIssuer{
+					{IssuerType: key.IssuerIDP, Issuer: "https://idp.example.com"},
+				},
+				DisableTimeEnforcement: true,
+			},
+			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
+			KeySpec: KeySpec{
+				Identity: key.KeyIdentity{IssuerType: key.IssuerSelf, Issuer: "https://idp.example.com"},
+			},
+			Expected:    ErrSigProfile,
+			ExpectedMsg: "not in the trusted issuers list",
+		},
+		{
+			Name: "VerifyIdentity_Disabled",
+			Sig:  extractedSignature{Label: "sig1", Signature: []byte{}, Input: sigBaseInput{MetadataValues: nil}},
+			Profile: VerifyProfile{
+				VerifyIdentity:         false,
+				DisableTimeEnforcement: true,
+			},
+			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
+			KeySpec: KeySpec{
+				Identity: key.KeyIdentity{IssuerType: key.IssuerIDP, Issuer: "https://untrusted.example.com"},
+			},
+			Expected: ErrCode(""),
+		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.Name, func(t *testing.T) {
-			err := tc.Profile.validate(tc.Sig, tc.KeySpecAlgo)
+			err := tc.Profile.validate(tc.Sig, tc.KeySpecAlgo, tc.KeySpec)
 			if tc.Expected == ErrCode("") {
 				sigtest.Diff(t, nil, err, "Diff")
 				return
@@ -879,6 +946,57 @@ func TestValidateTiming(t *testing.T) {
 				}
 			} else {
 				t.Fatal("Error was not type *SignatureError")
+			}
+		})
+	}
+}
+
+func TestDeriveTargetURI(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		expected string
+	}{
+		{
+			name:     "simple path no query",
+			url:      "https://example.com/path",
+			expected: "https://example.com/path",
+		},
+		{
+			name:     "path with query string",
+			url:      "https://example.com/path?foo=bar",
+			expected: "https://example.com/path?foo=bar",
+		},
+		{
+			name:     "path with multiple query params",
+			url:      "https://example.com/data?name=value&other=123",
+			expected: "https://example.com/data?name=value&other=123",
+		},
+		{
+			name:     "root path with query",
+			url:      "https://example.com/?query=test",
+			expected: "https://example.com/?query=test",
+		},
+		{
+			name:     "nested path no query",
+			url:      "https://example.com/api/v1/users",
+			expected: "https://example.com/api/v1/users",
+		},
+		{
+			name:     "empty query string preserved",
+			url:      "https://example.com/path?",
+			expected: "https://example.com/path?",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// httptest.NewRequest sets req.TLS for https URLs
+			req := httptest.NewRequest("GET", tc.url, nil)
+
+			got := deriveTargetURI(req)
+			if got != tc.expected {
+				t.Errorf("deriveTargetURI() = %q, want %q", got, tc.expected)
 			}
 		})
 	}

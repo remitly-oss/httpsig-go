@@ -31,15 +31,6 @@ const (
 	ecdsaP384SignatureSize = 96
 )
 
-// MetadataProvider allows customized functions for metadata parameter values. Not needed for default usage.
-type MetadataProvider interface {
-	Created() (int, error)
-	Expires() (int, error)
-	Nonce() (string, error)
-	Alg() (string, error)
-	KeyID() (string, error)
-	Tag() (string, error)
-}
 
 type signatureBase struct {
 	base           []byte        // The full signature base. Use this as input to signing and verification

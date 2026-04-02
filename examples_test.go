@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 
 	"github.com/remitly-oss/httpsig-go"
+	"github.com/remitly-oss/httpsig-go/key"
 	"github.com/remitly-oss/httpsig-go/keyman"
 	"github.com/remitly-oss/httpsig-go/keyutil"
+	"github.com/remitly-oss/httpsig-go/types"
 )
 
 func ExampleSign() {
@@ -23,7 +25,7 @@ BznPJ5sSI1Jn+srosJB/GbEZ3Kg6PcEi+jODF9fdpNEaHGbbGdaVhJi1
 	req := httptest.NewRequest("GET", "https://example.com/data", nil)
 
 	profile := httpsig.SigningProfile{
-		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+		Algorithm: types.Algo_ECDSA_P256_SHA256,
 		Fields:    httpsig.DefaultRequiredFields,
 		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
 	}
@@ -43,7 +45,7 @@ func ExampleSigningKeyOpts() {
 	req := httptest.NewRequest("GET", "https://example.com/data", nil)
 
 	profile := httpsig.SigningProfile{
-		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+		Algorithm: types.Algo_ECDSA_P256_SHA256,
 		Fields:    httpsig.DefaultRequiredFields,
 		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
 	}
@@ -67,10 +69,10 @@ MTQ7eYQXwqpTvTJkuTffGXKLilT75wY2YZWfybv9flu5d6bCfw+4UB9+cg==
 	pubkey, _ := keyutil.ReadPublicKey([]byte(pubkeyEncoded))
 	req := httptest.NewRequest("GET", "https://example.com/data", nil)
 
-	kf := keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+	kf := keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 		"key123": {
 			KeyID:  "key123",
-			Algo:   httpsig.Algo_ECDSA_P256_SHA256,
+			Algo:   types.Algo_ECDSA_P256_SHA256,
 			PubKey: pubkey,
 		},
 	})
@@ -99,7 +101,7 @@ func ExampleNewHandler() {
 
 func ExampleClient() {
 	profile := httpsig.SigningProfile{
-		Algorithm: httpsig.Algo_ECDSA_P256_SHA256,
+		Algorithm: types.Algo_ECDSA_P256_SHA256,
 		Fields:    httpsig.DefaultRequiredFields,
 		Metadata:  []httpsig.Metadata{httpsig.MetaKeyID},
 	}

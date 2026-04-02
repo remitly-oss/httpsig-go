@@ -13,13 +13,13 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
-	"testing"
 	"time"
 
 	sfv "github.com/dunglas/httpsfv"
+	"github.com/remitly-oss/httpsig-go/key"
+	"github.com/remitly-oss/httpsig-go/types"
 )
 
 var (
@@ -42,23 +42,13 @@ var (
 	defaultCreatedValidDuration = 5 * time.Minute
 )
 
-// KeySpec is the per-key information needed to verify a signature.
-type KeySpec struct {
-	KeyID  string
-	Algo   Algorithm
-	PubKey crypto.PublicKey
-	Secret []byte // shared secret for symmetric algorithms
-}
+// Re-exported from key package for backwards compatibility.
+type KeySpec = key.KeySpec
+type KeySpecer = key.KeySpecer
+type KeyFetcher = key.KeyFetcher
 
-// KeySpec implements KeySpecer
-func (ks KeySpec) KeySpec() (KeySpec, error) {
-	return ks, nil
-}
-
-// KeySpecer should be implemented by your key/credential store
-type KeySpecer interface {
-	KeySpec() (KeySpec, error)
-}
+// MetadataProvider re-exported from types package for backwards compatibility.
+type MetadataProvider = types.MetadataProvider
 
 type KeyErrorReason string
 type KeyError struct {
@@ -67,21 +57,24 @@ type KeyError struct {
 	Message string
 }
 
-type KeyFetcher interface {
-	// FetchByKeyID looks up a KeySpec from the 'keyid' metadata parameter on the signature.
-	FetchByKeyID(ctx context.Context, rh http.Header, keyID string) (KeySpecer, error)
-	// Fetch looks up a KeySpec when the keyid is not in the signature.
-	Fetch(ctx context.Context, rh http.Header, md MetadataProvider) (KeySpecer, error)
-}
-
 // VerifyProfile sets the parameters for a fully valid request or response.
 // A valid signature is a relatively easy accomplishment. Did the signature include all the important parts of the request? Did it use a strong enough algorithm? Was it signed 41 days ago?  There are choices to make about what constitutes a valid signed request or response beyond just a verified signature.
+// TrustedIssuer identifies a trusted identity issuer by type and issuer string.
+type TrustedIssuer struct {
+	IssuerType key.IssuerType
+	Issuer     string
+}
+
 type VerifyProfile struct {
 	SignatureLabel     string // Which signature this profile applies to.
 	RequiredFields     []SignedField
 	RequiredMetadata   []Metadata
 	DisallowedMetadata []Metadata
 	AllowedAlgorithms  []Algorithm // Which algorithms are allowed, either from keyid meta or in the KeySpec
+
+	// Identity enforcement options
+	VerifyIdentity bool            // If true, the KeySpec Identity must match a TrustedIssuer entry.
+	TrustedIssuers []TrustedIssuer // Issuers considered trusted when VerifyIdentity is true.
 
 	// Timing enforcement options
 	DisableTimeEnforcement       bool          // If true do no time enforcement on any fields
@@ -94,10 +87,10 @@ type VerifyProfile struct {
 }
 
 type VerifyResult struct {
-	Verified  bool
+	Verified  bool // True only if the signature has been verified and validated according to the VerifyProfile.
 	Label     string
 	KeySpecer KeySpecer
-	DebugInfo VerifyDebugInfo // Present if the verifier debug flag is set and the signature was valid.
+	DebugInfo VerifyDebugInfo // Present if the verifier debug flag is set and the signature was syntactically valid.
 	MetadataProvider
 }
 
@@ -206,7 +199,7 @@ func (ver *Verifier) verify(hrr httpMessage) (VerifyResult, error) {
 		return vr, err
 	}
 
-	if err := ver.profile.validate(sig, ks.Algo); err != nil {
+	if err := ver.profile.validate(sig, ks.Algo, ks); err != nil {
 		return vr, err
 	}
 
@@ -452,8 +445,8 @@ func (vp VerifyProfile) now() time.Time {
 	return vp.nowTime()
 }
 
-// validate enforces the VeriryProfile settings are met for the given signature. This should only done after the signature is *verified*.
-func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error {
+// validate enforces the VerifyProfile settings are met for the given signature. This should only be done after the signature is *verified*.
+func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm, ks KeySpec) error {
 	// Validate signature label
 	if vp.SignatureLabel != "" && sig.Label != vp.SignatureLabel {
 		return newError(ErrSigProfile, fmt.Sprintf("Signature label '%s' does not match required label '%s'", sig.Label, vp.SignatureLabel))
@@ -497,7 +490,22 @@ func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm) error
 		}
 	}
 
+	if vp.VerifyIdentity {
+		if err := vp.validateIdentity(ks.Identity); err != nil {
+			return err
+		}
+	}
+
 	return vp.validateTiming(sig, vp.now())
+}
+
+func (vp VerifyProfile) validateIdentity(identity key.KeyIdentity) error {
+	for _, trusted := range vp.TrustedIssuers {
+		if trusted.IssuerType == identity.IssuerType && trusted.Issuer == identity.Issuer {
+			return nil
+		}
+	}
+	return newError(ErrSigProfile, fmt.Sprintf("Identity issuer %q (type %q) is not in the trusted issuers list", identity.Issuer, identity.IssuerType))
 }
 
 // validateTiming validates all the time based properties are within tolerance of the VerifyProfile. currentTime is passed in as a parameter to capture a stable time for all subsequent checks.
@@ -555,56 +563,6 @@ func (vp VerifyProfile) validateTiming(sig extractedSignature, currentTime time.
 	return nil
 }
 
-func TestDeriveTargetURI(t *testing.T) {
-	tests := []struct {
-		name     string
-		url      string
-		expected string
-	}{
-		{
-			name:     "simple path no query",
-			url:      "https://example.com/path",
-			expected: "https://example.com/path",
-		},
-		{
-			name:     "path with query string",
-			url:      "https://example.com/path?foo=bar",
-			expected: "https://example.com/path?foo=bar",
-		},
-		{
-			name:     "path with multiple query params",
-			url:      "https://example.com/data?name=value&other=123",
-			expected: "https://example.com/data?name=value&other=123",
-		},
-		{
-			name:     "root path with query",
-			url:      "https://example.com/?query=test",
-			expected: "https://example.com/?query=test",
-		},
-		{
-			name:     "nested path no query",
-			url:      "https://example.com/api/v1/users",
-			expected: "https://example.com/api/v1/users",
-		},
-		{
-			name:     "empty query string preserved",
-			url:      "https://example.com/path?",
-			expected: "https://example.com/path?",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			// httptest.NewRequest sets req.TLS for https URLs
-			req := httptest.NewRequest("GET", tc.url, nil)
-
-			got := deriveTargetURI(req)
-			if got != tc.expected {
-				t.Errorf("deriveTargetURI() = %q, want %q", got, tc.expected)
-			}
-		})
-	}
-}
 
 type metadataProviderFromParams struct {
 	Params *sfv.Params

@@ -6,9 +6,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/remitly-oss/httpsig-go"
+	"github.com/remitly-oss/httpsig-go/key"
 	"github.com/remitly-oss/httpsig-go/keyman"
 	"github.com/remitly-oss/httpsig-go/keyutil"
 	"github.com/remitly-oss/httpsig-go/sigtest"
+	"github.com/remitly-oss/httpsig-go/types"
 )
 
 // TestVerifyResult ensures the VerifyReuslt contains the expected shape.
@@ -18,17 +20,17 @@ func TestVerifyResult(t *testing.T) {
 		RequestFile  string
 		Label        string
 		AddDebugInfo bool
-		Keys         httpsig.KeyFetcher
+		Keys         key.KeyFetcher
 		Expected     httpsig.VerifyResult
 	}{
 		{
 			Name:        "OneValid",
 			Label:       "sig-b21",
 			RequestFile: "verify_request1.txt",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-rsa-pss": {
 					KeyID:  "test-key-rsa-pss",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
@@ -40,9 +42,9 @@ func TestVerifyResult(t *testing.T) {
 					httpsig.MetaCreated: int64(1618884473),
 					httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
 				}},
-				KeySpecer: httpsig.KeySpec{
+				KeySpecer: key.KeySpec{
 					KeyID:  "test-key-rsa-pss",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			},
@@ -52,10 +54,10 @@ func TestVerifyResult(t *testing.T) {
 			Label:        "sig-b21",
 			RequestFile:  "verify_request1.txt",
 			AddDebugInfo: true,
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-rsa-pss": {
 					KeyID:  "test-key-rsa-pss",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
@@ -67,9 +69,9 @@ func TestVerifyResult(t *testing.T) {
 					httpsig.MetaCreated: int64(1618884473),
 					httpsig.MetaNonce:   "b3k2pp5k7z-50gnwp.yemd",
 				}},
-				KeySpecer: httpsig.KeySpec{
+				KeySpecer: key.KeySpec{
 					KeyID:  "test-key-rsa-pss",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 				DebugInfo: httpsig.VerifyDebugInfo{
@@ -108,17 +110,17 @@ func TestVerifyInvalid(t *testing.T) {
 		Name        string
 		RequestFile string
 		Label       string
-		Keys        httpsig.KeyFetcher
+		Keys        key.KeyFetcher
 		Expected    httpsig.ErrCode
 	}{
 		{
 			Name:        "SignatureVerificationFailure",
 			RequestFile: "verify_request2.txt",
 			Label:       "bad-sig",
-			Keys: keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{
+			Keys: keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
 				"test-key-rsa-pss": {
 					KeyID:  "test-key-rsa-pss",
-					Algo:   httpsig.Algo_RSA_PSS_SHA512,
+					Algo:   types.Algo_RSA_PSS_SHA512,
 					PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
 				},
 			}),
@@ -128,14 +130,14 @@ func TestVerifyInvalid(t *testing.T) {
 			Name:        "KeyFetchError",
 			RequestFile: "verify_request2.txt",
 			Label:       "sig-b21",
-			Keys:        keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{}),
+			Keys:        keyman.NewKeyFetchInMemory(map[string]key.KeySpec{}),
 			Expected:    httpsig.ErrSigKeyFetch,
 		},
 		{
 			Name:        "KeyFetchError2",
 			RequestFile: "verify_request2.txt",
 			Label:       "bad-sig",
-			Keys:        keyman.NewKeyFetchInMemory(map[string]httpsig.KeySpec{}),
+			Keys:        keyman.NewKeyFetchInMemory(map[string]key.KeySpec{}),
 			Expected:    httpsig.ErrSigKeyFetch,
 		},
 	}
@@ -218,7 +220,7 @@ func getCmdOpts() []cmp.Option {
 	}
 }
 
-func TransformMeta(md httpsig.MetadataProvider) map[string]any {
+func TransformMeta(md types.MetadataProvider) map[string]any {
 	out := map[string]any{}
 
 	if md == nil {

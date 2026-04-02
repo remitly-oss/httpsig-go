@@ -11,9 +11,11 @@ import (
 	"unicode"
 
 	sfv "github.com/dunglas/httpsfv"
+	"github.com/remitly-oss/httpsig-go/types"
 )
 
-type Algorithm string
+// Algorithm is re-exported from types for backwards compatibility.
+type Algorithm = types.Algorithm
 type Digest string
 
 // Metadata are the named signature metadata parameters
@@ -25,12 +27,12 @@ type NonceScheme int
 
 const (
 	// Supported signing algorithms
-	Algo_RSA_PSS_SHA512    Algorithm = "rsa-pss-sha512"
-	Algo_RSA_v1_5_sha256   Algorithm = "rsa-v1_5-sha256"
-	Algo_HMAC_SHA256       Algorithm = "hmac-sha256"
-	Algo_ECDSA_P256_SHA256 Algorithm = "ecdsa-p256-sha256"
-	Algo_ECDSA_P384_SHA384 Algorithm = "ecdsa-p384-sha384"
-	Algo_ED25519           Algorithm = "ed25519"
+	Algo_RSA_PSS_SHA512    = types.Algo_RSA_PSS_SHA512
+	Algo_RSA_v1_5_sha256   = types.Algo_RSA_v1_5_sha256
+	Algo_HMAC_SHA256       = types.Algo_HMAC_SHA256
+	Algo_ECDSA_P256_SHA256 = types.Algo_ECDSA_P256_SHA256
+	Algo_ECDSA_P384_SHA384 = types.Algo_ECDSA_P384_SHA384
+	Algo_ED25519           = types.Algo_ED25519
 
 	DigestSHA256 Digest = "sha-256"
 	DigestSHA512 Digest = "sha-512"
@@ -218,10 +220,10 @@ func (so SigningProfile) validate(skey SigningKey) error {
 	if so.Algorithm == "" {
 		return fmt.Errorf("Missing required signing option 'Algorithm'")
 	}
-	if so.Algorithm.symmetric() && len(skey.Secret) == 0 {
+	if so.Algorithm.Symmetric() && len(skey.Secret) == 0 {
 		return newError(ErrInvalidSignatureOptions, "Missing required 'Secret' value in SigningKey")
 	}
-	if !so.Algorithm.symmetric() && skey.Key == nil && skey.Opts.Signer == nil {
+	if !so.Algorithm.Symmetric() && skey.Key == nil && skey.Opts.Signer == nil {
 		return newError(ErrInvalidSignatureOptions, "Missing required 'Key' or 'Opts.Signer' value in SigningKey")
 	}
 	if !isSafeString(so.Label) {
@@ -301,13 +303,6 @@ func (sf signedFields) includes(field string) bool {
 	return false
 }
 
-func (a Algorithm) symmetric() bool {
-	switch a {
-	case Algo_HMAC_SHA256:
-		return true
-	}
-	return false
-}
 func componentsIDs(sfs []SignedField) []componentID {
 	cIDs := []componentID{}
 	for _, sf := range sfs {
