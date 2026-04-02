@@ -83,6 +83,7 @@ type transport struct {
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.sign {
+		req = req.Clone(req.Context())
 		// Signing does not read or close the body
 		err := t.signer.Sign(req)
 		if err != nil {
