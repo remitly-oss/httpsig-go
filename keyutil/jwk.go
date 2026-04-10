@@ -208,11 +208,11 @@ func (ec *jwkEC) PublicKey() (*ecdsa.PublicKey, error) {
 		return nil, err
 	}
 
-	if len(ec.X.Bytes()) != byteLen {
-		return nil, fmt.Errorf("X coordinate must be %d byte length for curve '%s'. Got '%d'", byteLen, ec.Curve, len(ec.X.Bytes()))
+	if ec.X.BitLen() > byteLen*8 {
+		return nil, fmt.Errorf("X coordinate exceeds %d bytes for curve '%s'", byteLen, ec.Curve)
 	}
-	if len(ec.Y.Bytes()) != byteLen {
-		return nil, fmt.Errorf("Y coordinate must be %d byte length for curve '%s'. Got '%d'", byteLen, ec.Curve, len(ec.Y.Bytes()))
+	if ec.Y.BitLen() > byteLen*8 {
+		return nil, fmt.Errorf("Y coordinate exceeds %d bytes for curve '%s'", byteLen, ec.Curve)
 	}
 
 	return &ecdsa.PublicKey{
@@ -249,8 +249,8 @@ func (ec *jwkEC) PrivateKey() (*ecdsa.PrivateKey, error) {
 		return nil, err
 	}
 
-	if len(ec.D.Bytes()) != byteLen {
-		return nil, fmt.Errorf("D coordinate must be %d byte length for curve '%s'. Got '%d'", byteLen, ec.Curve, len(ec.D.Bytes()))
+	if ec.D.BitLen() > byteLen*8 {
+		return nil, fmt.Errorf("D coordinate exceeds %d bytes for curve '%s'", byteLen, ec.Curve)
 	}
 
 	return &ecdsa.PrivateKey{
