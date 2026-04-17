@@ -24,6 +24,7 @@ const (
 	SchemeJWKSURI Scheme = "jwks_uri"
 	SchemeX509    Scheme = "x509"
 	SchemeJWT     Scheme = "jwt"
+	SchemeJKTJWT  Scheme = "jkt-jwt"
 )
 
 type ParametersHWK struct {
@@ -40,15 +41,30 @@ type ParametersJWT struct {
 	JWT string `sfv:"jwt"`
 }
 
+// ParametersJKTJWT are the parameters for the jkt-jwt scheme. The JWT must
+// have its signing key in the jwk header parameter and its typ must be
+// "jkt-s256+jwt" or "jkt-s512+jwt".
+type ParametersJKTJWT struct {
+	JWT string `sfv:"jwt"`
+}
+
+// ParametersJWKSURI are the parameters for the jwks_uri scheme.
+// The verifier fetches {ID}/.well-known/{DWK} to obtain the JWKS URI,
+// then retrieves the key matching KID.
 type ParametersJWKSURI struct {
-	JWKSURI   string `sfv:"jwks_uri"`
-	KID       string `sfv:"kid,omitempty"`
-	WellKnown string `sfv:"well-known,omitempty"`
+	// ID is the signer identifier (HTTPS URL).
+	ID string `sfv:"id"`
+	// DWK is the dot well-known metadata document name under /.well-known/.
+	DWK string `sfv:"dwk"`
+	// KID is the key identifier within the JWKS.
+	KID string `sfv:"kid"`
 }
 
 type ParametersX509 struct {
 	X5U string `sfv:"x5u"`
-	X5T string `sfv:"x5t,omitempty"`
+	// X5T is the base64url-encoded SHA-256 hash of the DER-encoded
+	// end-entity certificate. Required per draft-04.
+	X5T string `sfv:"x5t"`
 }
 
 // SigKeyHeader is one parsed entry from the Signature-Key header dictionary.
@@ -140,21 +156,39 @@ func (e SigKeyHeader) StringParam(name string) (string, error) {
 }
 
 // JWT returns the unvalidated JWT string from the entry's parameters.
-// Convenience wrapper for StringParam(SchemeJWT).
+// Used for both the jwt and jkt-jwt schemes, both of which carry the JWT in
+// the "jwt" parameter.
 func (e SigKeyHeader) JWT() (string, error) {
-	s, err := e.StringParam(string(SchemeJWT))
+	s, err := e.StringParam("jwt")
 	if err != nil {
 		return "", fmt.Errorf("sigkey: entry %q is missing required 'jwt' parameter: %w", e.Label, err)
 	}
 	return s, nil
 }
 
-// JWKSURI returns the JWKS URI from the entry's parameters.
-// Convenience wrapper for StringParam(SchemeHWKSURI).
-func (e SigKeyHeader) JWKSURI() (string, error) {
-	s, err := e.StringParam(string(SchemeJWKSURI))
+// ID returns the signer identifier (HTTPS URL) from a jwks_uri entry.
+func (e SigKeyHeader) ID() (string, error) {
+	s, err := e.StringParam("id")
 	if err != nil {
-		return "", fmt.Errorf("sigkey: entry %q is missing required 'hwks_uri' parameter: %w", e.Label, err)
+		return "", fmt.Errorf("sigkey: entry %q is missing required 'id' parameter: %w", e.Label, err)
+	}
+	return s, nil
+}
+
+// DWK returns the dot well-known metadata document name from a jwks_uri entry.
+func (e SigKeyHeader) DWK() (string, error) {
+	s, err := e.StringParam("dwk")
+	if err != nil {
+		return "", fmt.Errorf("sigkey: entry %q is missing required 'dwk' parameter: %w", e.Label, err)
+	}
+	return s, nil
+}
+
+// KID returns the key identifier from a jwks_uri entry.
+func (e SigKeyHeader) KID() (string, error) {
+	s, err := e.StringParam("kid")
+	if err != nil {
+		return "", fmt.Errorf("sigkey: entry %q is missing required 'kid' parameter: %w", e.Label, err)
 	}
 	return s, nil
 }
