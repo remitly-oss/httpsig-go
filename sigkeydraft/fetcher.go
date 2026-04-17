@@ -13,6 +13,7 @@ import (
 )
 
 // SignatureKeyFetcher implements key.KeyFetcher by resolving keys from the
+
 // Signature-Key header using draft-hardt-httpbis-signature-key-04.
 //
 // Only the jwt scheme is supported. For each verified signature label the
