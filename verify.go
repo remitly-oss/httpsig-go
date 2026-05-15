@@ -43,11 +43,15 @@ var (
 )
 
 // Re-exported from key package for backwards compatibility.
+//go:fix inline
 type KeySpec = key.KeySpec
+//go:fix inline
 type KeySpecer = key.KeySpecer
+//go:fix inline
 type KeyFetcher = key.KeyFetcher
 
 // MetadataProvider re-exported from types package for backwards compatibility.
+//go:fix inline
 type MetadataProvider = types.MetadataProvider
 
 type KeyErrorReason string

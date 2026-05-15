@@ -6,11 +6,20 @@ import (
 	sfv "github.com/dunglas/httpsfv"
 )
 
+type AcceptSigkeyParam string
+
+const (
+	SigkeyParamJKT  AcceptSigkeyParam = "jkt"
+	SigkeyParamURI  AcceptSigkeyParam = "uri"
+	SigkeyParamX509 AcceptSigkeyParam = "x509"
+)
+
 type AcceptSignature struct {
-	Profile   SigningProfile
-	MetaNonce string // 'nonce'
-	MetaKeyID string // 'keyid'
-	MetaTag   string // 'tag' - No default. A value must be provided if the parameter is in Metadata.
+	Profile     SigningProfile
+	MetaNonce   string            // 'nonce'
+	MetaKeyID   string            // 'keyid'
+	MetaTag     string            // 'tag' - No default. A value must be provided if the parameter is in Metadata.
+	SigkeyParam AcceptSigkeyParam // 'sigkey' - key transport requirement from draft-hardt-httpbis-signature-key
 }
 
 func ParseAcceptSignature(acceptHeader string) (AcceptSignature, error) {
@@ -48,18 +57,33 @@ func ParseAcceptSignature(acceptHeader string) (AcceptSignature, error) {
 
 	md := metadataProviderFromParams{profileList.Params}
 	for _, meta := range profileList.Params.Names() {
-		as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
 		switch Metadata(meta) {
 		case MetaNonce:
+			as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
 			as.MetaNonce, _ = md.Nonce()
 		case MetaAlgorithm:
+			as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
 			alg, _ := md.Alg()
 			as.Profile.Algorithm = Algorithm(alg)
 		case MetaKeyID:
+			as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
 			as.MetaKeyID, _ = md.KeyID()
 		case MetaTag:
+			as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
 			as.MetaTag, _ = md.Tag()
-
+		default:
+			if meta == "sigkey" {
+				if v, ok := profileList.Params.Get("sigkey"); ok {
+					switch val := v.(type) {
+					case sfv.Token:
+						as.SigkeyParam = AcceptSigkeyParam(val)
+					case string:
+						as.SigkeyParam = AcceptSigkeyParam(val)
+					}
+				}
+			} else {
+				as.Profile.Metadata = append(as.Profile.Metadata, Metadata(meta))
+			}
 		}
 	}
 

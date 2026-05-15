@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -88,16 +89,36 @@ type SigningKey struct {
 	Secret []byte            // Secret to use for symmetric algorithms
 	Opts   SigningKeyOpts    // Options for advanced signing use cases like TPMs.
 	// Meta fields
-	MetaKeyID string // 'keyid' - Only used if 'keyid' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile. Metadata.
-	MetaTag   string // 'tag'. Only used if 'tag' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile.
+	MetaKeyID  string    // 'keyid' - Only used if 'keyid' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile. Metadata.
+	MetaTag    string    // 'tag'. Only used if 'tag' is set in the SigningProfile. A value must be provided if the parameter is required in the SigningProfile.
+	Expiration time.Time // Optional expiration time. If expired when Sign is called and a SigningKeyGenerator is available a new key is generated.
+}
+
+func (skey *SigningKey) Expired() bool {
+	if skey.Expiration.IsZero() {
+		return false
+	}
+
+	return time.Now().After(skey.Expiration)
 }
 
 type SigningKeyOpts struct {
 	Signer       crypto.Signer // crypto.Signer interface for TPMs and other custom use cases.
 	ASN1ForECDSA bool          // Set to true to indicate the crypto.Signer returns ASN.1 formatted signatures for ECDSA algorithms. False (default) indicates ECDSA signatures are concatenated R and S parameters as per the HTTP Signatures spec.
+
+	// PresignHeaders is called before signing to allow header manipulation if not nil.
+	// It is intended for setting information about the signing key in the request.
+	PresignHeaders func(http.Header) error
 }
+
+type SigningKeyGenerator interface {
+	GenerateKey(SigningProfile) (SigningKey, error)
+}
+
 type Signer struct {
 	profile SigningProfile
+	keygen  SigningKeyGenerator
+	mu      sync.Mutex
 	skey    SigningKey
 }
 
@@ -110,6 +131,24 @@ func NewSigner(profile SigningProfile, skey SigningKey) (*Signer, error) {
 	opts := profile.withDefaults()
 	s := &Signer{
 		profile: opts,
+		skey:    skey,
+	}
+	return s, nil
+}
+
+func NewSignerWithKeyGenerator(profile SigningProfile, keygen SigningKeyGenerator) (*Signer, error) {
+	opts := profile.withDefaults()
+	skey, err := keygen.GenerateKey(profile)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to generate signing key: %w", err)
+	}
+	err = profile.validate(skey)
+	if err != nil {
+		return nil, err
+	}
+	s := &Signer{
+		profile: opts,
+		keygen:  keygen,
 		skey:    skey,
 	}
 	return s, nil
@@ -140,42 +179,50 @@ func (s *Signer) Sign(req *http.Request) error {
 		req.Header.Set("Content-Digest", digestValue)
 	}
 
-	baseParams, err := s.baseParameters()
-	if err != nil {
-		return err
-	}
-
-	return sign(
-		httpMessage{
-			Req: req,
-		}, sigParameters{
-			Base:       baseParams,
-			Algo:       s.profile.Algorithm,
-			PrivateKey: s.skey.Key,
-			Secret:     s.skey.Secret,
-			Opts:       s.skey.Opts,
-			Label:      s.profile.Label,
-		})
+	return s.internalSign(httpMessage{
+		Req: req,
+	})
 }
 
 func (s *Signer) SignResponse(resp *http.Response) error {
+	return s.internalSign(httpMessage{
+		IsResponse: true,
+		Resp:       resp,
+	})
+}
+
+func (s *Signer) internalSign(msg httpMessage) error {
 	baseParams, err := s.baseParameters()
 	if err != nil {
 		return err
 	}
 
-	return sign(
-		httpMessage{
-			IsResponse: true,
-			Resp:       resp,
-		}, sigParameters{
-			Base:       baseParams,
-			Algo:       s.profile.Algorithm,
-			PrivateKey: s.skey.Key,
-			Secret:     s.skey.Secret,
-			Opts:       s.skey.Opts,
-			Label:      s.profile.Label,
-		})
+	// Generate a new key if the current one is expied.
+	s.mu.Lock()
+	if s.skey.Expired() {
+		newKey, err := s.keygen.GenerateKey(s.profile)
+		if err != nil {
+			s.mu.Unlock()
+			return fmt.Errorf("failed to generate signing key: %w", err)
+		}
+		s.skey = newKey
+	}
+	skey := s.skey
+	s.mu.Unlock()
+
+	// Presign headers to allow for setting signing key information.
+	if s.skey.Opts.PresignHeaders != nil {
+		s.skey.Opts.PresignHeaders(msg.Headers())
+	}
+
+	return sign(msg, sigParameters{
+		Base:       baseParams,
+		Algo:       s.profile.Algorithm,
+		PrivateKey: skey.Key,
+		Secret:     skey.Secret,
+		Opts:       skey.Opts,
+		Label:      s.profile.Label,
+	})
 }
 
 func (s *Signer) baseParameters() (sigBaseInput, error) {

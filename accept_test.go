@@ -49,6 +49,61 @@ func TestAcceptParseSignature(t *testing.T) {
 			AcceptHeader:    `sig1=("@method" 1 "@authority" "content-digest" "cache-control");keyid="test-key-rsa-pss";created;tag="app-123"`,
 			ExpectedErrCode: ErrInvalidAcceptSignature,
 		},
+		{
+			Name:         "SigkeyJKT",
+			Desc:         "sigkey=jkt token parameter is parsed and not added to Profile.Metadata",
+			AcceptHeader: `sig1=("@method" "@path" "@authority");sigkey=jkt`,
+			Expected: AcceptSignature{
+				SigkeyParam: SigkeyParamJKT,
+				Profile: SigningProfile{
+					Fields:   Fields("@method", "@path", "@authority"),
+					Metadata: []Metadata{},
+					Label:    "sig1",
+				},
+			},
+		},
+		{
+			Name:         "SigkeyURI",
+			Desc:         "sigkey=uri token parameter is parsed",
+			AcceptHeader: `sig1=("@method" "@authority" "@path");alg="ecdsa-p256-sha256";sigkey=uri`,
+			Expected: AcceptSignature{
+				SigkeyParam: SigkeyParamURI,
+				Profile: SigningProfile{
+					Fields:    Fields("@method", "@authority", "@path"),
+					Metadata:  []Metadata{"alg"},
+					Algorithm: Algo_ECDSA_P256_SHA256,
+					Label:     "sig1",
+				},
+			},
+		},
+		{
+			Name:         "SigkeyX509",
+			Desc:         "sigkey=x509 token parameter is parsed",
+			AcceptHeader: `sig1=("@method");sigkey=x509`,
+			Expected: AcceptSignature{
+				SigkeyParam: SigkeyParamX509,
+				Profile: SigningProfile{
+					Fields:   Fields("@method"),
+					Metadata: []Metadata{},
+					Label:    "sig1",
+				},
+			},
+		},
+		{
+			Name:         "SigkeyWithOtherParams",
+			Desc:         "sigkey alongside nonce and tag",
+			AcceptHeader: `sig1=("@method");nonce="abc123";tag="myapp";sigkey=jkt`,
+			Expected: AcceptSignature{
+				MetaNonce:   "abc123",
+				MetaTag:     "myapp",
+				SigkeyParam: SigkeyParamJKT,
+				Profile: SigningProfile{
+					Fields:   Fields("@method"),
+					Metadata: []Metadata{"nonce", "tag"},
+					Label:    "sig1",
+				},
+			},
+		},
 	}
 
 	for _, tc := range testcases {
