@@ -124,6 +124,17 @@ func TestSpecVerify(t *testing.T) {
 
 // TestSpecComponentParameters verifies messages that cover components with the 'key' and 'req' parameters.
 func TestSpecComponentParameters(t *testing.T) {
+	// The draft identifies the RFC 9421 Appendix B.1.4 key by its JWK thumbprint
+	ed25519Key := KeySpec{
+		KeyID:  "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U",
+		Algo:   Algo_ED25519,
+		PubKey: sigtest.ReadTestPubkey(t, "test-key-ed25519.pub"),
+	}
+	eccKey := KeySpec{
+		KeyID:  "test-key-ecc-p256",
+		Algo:   Algo_ECDSA_P256_SHA256,
+		PubKey: sigtest.ReadTestPubkey(t, "test-key-ecc-p256.pub"),
+	}
 	cases := []struct {
 		Name        string
 		Label       string
@@ -135,35 +146,39 @@ func TestSpecComponentParameters(t *testing.T) {
 	}{
 		{
 			// draft-ietf-webbotauth-httpsig-protocol-00 Appendix E.2.1
-			Name:  "SignatureAgentMember",
-			Label: "sig2",
-			Key: KeySpec{
-				KeyID:  "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U",
-				Algo:   Algo_ED25519,
-				PubKey: sigtest.ReadTestPubkey(t, "test-key-ed25519.pub"),
-			},
+			Name:       "SignatureAgentMember",
+			Label:      "sig2",
+			Key:        ed25519Key,
 			SignedFile: "webbotauth_e21_request_signed.txt",
 		},
 		{
+			// draft-ietf-webbotauth-httpsig-protocol-00 Appendix E.2.3
+			Name:        "DirectoryResponse",
+			Label:       "binding",
+			Key:         ed25519Key,
+			SignedFile:  "webbotauth_e23_response_signed.txt",
+			RequestFile: "webbotauth_e23_request.txt",
+		},
+		{
 			// RFC 9421 Section 2.4
-			Name:  "RequestComponentsInResponse",
-			Label: "reqres",
-			Key: KeySpec{
-				KeyID:  "test-key-ecc-p256",
-				Algo:   Algo_ECDSA_P256_SHA256,
-				PubKey: sigtest.ReadTestPubkey(t, "test-key-ecc-p256.pub"),
-			},
+			Name:        "RequestComponentsInResponse",
+			Label:       "reqres",
+			Key:         eccKey,
 			SignedFile:  "rfc_2_4_response_signed.txt",
 			RequestFile: "rfc-test-request.txt",
 		},
 		{
-			Name:  "RequestComponentsInResponseOtherAuthority",
-			Label: "reqres",
-			Key: KeySpec{
-				KeyID:  "test-key-ecc-p256",
-				Algo:   Algo_ECDSA_P256_SHA256,
-				PubKey: sigtest.ReadTestPubkey(t, "test-key-ecc-p256.pub"),
-			},
+			// RFC 9421 Section 2.4, the response to the signed request
+			Name:        "RequestComponentsInResponseToSignedRequest",
+			Label:       "reqres",
+			Key:         eccKey,
+			SignedFile:  "rfc_2_4_signed_request_response_signed.txt",
+			RequestFile: "rfc-test-request.txt",
+		},
+		{
+			Name:        "RequestComponentsInResponseOtherAuthority",
+			Label:       "reqres",
+			Key:         eccKey,
 			SignedFile:  "rfc_2_4_response_signed.txt",
 			RequestFile: "rfc-test-request.txt",
 			Authority:   "example.org",
@@ -188,14 +203,7 @@ func TestSpecComponentParameters(t *testing.T) {
 			if tc.RequestFile == "" {
 				_, verifyErr = ver.Verify(sigtest.ReadRequest(t, tc.SignedFile))
 			} else {
-				resptxt, err := os.Open(fmt.Sprintf("testdata/%s", tc.SignedFile))
-				if err != nil {
-					t.Fatal(err)
-				}
-				resp, err := http.ReadResponse(bufio.NewReader(resptxt), nil)
-				if err != nil {
-					t.Fatal(err)
-				}
+				resp := sigtest.ReadResponse(t, tc.SignedFile)
 				resp.Request = sigtest.ReadRequest(t, tc.RequestFile)
 				if tc.Authority != "" {
 					resp.Request.Host = tc.Authority
@@ -354,6 +362,77 @@ func TestSpecBase(t *testing.T) {
 				},
 			},
 			ExpectedFile: "b26_request_sigbase.txt",
+		},
+		{
+			// Section 2.4
+			Name:        "rfc_2_4",
+			IsResponse:  true,
+			SourceFile:  "rfc_2_4_response_signed.txt",
+			RequestFile: "rfc-test-request.txt",
+			Params: sigBaseInput{
+				Components: componentsIDs(append(
+					Fields("@status", "content-digest", "content-type"),
+					reqFields("@authority", "@method", "@path", "content-digest")...)),
+				MetadataParams: []Metadata{
+					MetaCreated,
+					MetaKeyID,
+				},
+				MetadataValues: fixedMetadataProvider{
+					values: map[Metadata]any{
+						MetaCreated: int64(1618884479),
+						MetaKeyID:   "test-key-ecc-p256",
+					},
+				},
+			},
+			ExpectedFile: "rfc_2_4_response_sigbase.txt",
+		},
+		{
+			// Section 2.4, the response to the signed request
+			Name:        "rfc_2_4_signed_request",
+			IsResponse:  true,
+			SourceFile:  "rfc_2_4_signed_request_response_signed.txt",
+			RequestFile: "rfc-test-request.txt",
+			Params: sigBaseInput{
+				Components: componentsIDs(append(
+					Fields("@status", "content-digest", "content-type"),
+					reqFields("@authority", "@method", "@path", "@query", "content-digest", "content-type", "content-length")...)),
+				MetadataParams: []Metadata{
+					MetaCreated,
+					MetaKeyID,
+				},
+				MetadataValues: fixedMetadataProvider{
+					values: map[Metadata]any{
+						MetaCreated: int64(1618884479),
+						MetaKeyID:   "test-key-ecc-p256",
+					},
+				},
+			},
+			ExpectedFile: "rfc_2_4_signed_request_response_sigbase.txt",
+		},
+		{
+			// draft-ietf-webbotauth-httpsig-protocol-00 Appendix E.2.3
+			Name:        "webbotauth_e23",
+			IsResponse:  true,
+			SourceFile:  "webbotauth_e23_response_signed.txt",
+			RequestFile: "webbotauth_e23_request.txt",
+			Params: sigBaseInput{
+				Components: componentsIDs(append(reqFields("@authority"), Fields("content-digest")...)),
+				MetadataParams: []Metadata{
+					MetaCreated,
+					MetaExpires,
+					MetaKeyID,
+					MetaTag,
+				},
+				MetadataValues: fixedMetadataProvider{
+					values: map[Metadata]any{
+						MetaCreated: int64(1735689600),
+						MetaExpires: int64(4889289600),
+						MetaKeyID:   "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U",
+						MetaTag:     "http-message-signatures-directory",
+					},
+				},
+			},
+			ExpectedFile: "webbotauth_e23_response_sigbase.txt",
 		},
 	}
 

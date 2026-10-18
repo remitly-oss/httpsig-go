@@ -1,0 +1,4 @@
+GET /.well-known/http-message-signatures-directory HTTP/1.1
+Host: signature-agent.test
+Accept: application/http-message-signatures-directory+json
+

@@ -28,6 +28,19 @@ func ReadRequest(t testing.TB, reqFile string) *http.Request {
 	return req
 }
 
+func ReadResponse(t testing.TB, respFile string) *http.Response {
+	resptxt, err := os.Open(fmt.Sprintf("testdata/%s", respFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(resptxt), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func MustReadFile(file string) []byte {
 	data, err := os.ReadFile(file)
 	if err != nil {

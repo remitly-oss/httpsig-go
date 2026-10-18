@@ -1,0 +1,11 @@
+"@status": 503
+"content-digest": sha-512=:0Y6iCBzGg5rZtoXS95Ijz03mslf6KAMCloESHObfwnHJDbkkWWQz6PhhU9kxsTbARtY2PTBOzq24uJFpHsMuAg==:
+"content-type": application/json
+"@authority";req: example.com
+"@method";req: POST
+"@path";req: /foo
+"@query";req: ?param=Value&Pet=dog
+"content-digest";req: sha-512=:WZDPaVn/7XgHaAy8pmojAkGWoRx2UFChF41A2svX+TaPm+AbwAgBWnrIiYllu7BNNyealdVLvRwEmTHWXvJwew==:
+"content-type";req: application/json
+"content-length";req: 18
+"@signature-params": ("@status" "content-digest" "content-type" "@authority";req "@method";req "@path";req "@query";req "content-digest";req "content-type";req "content-length";req);created=1618884479;keyid="test-key-ecc-p256"

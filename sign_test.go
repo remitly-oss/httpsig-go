@@ -16,6 +16,7 @@ type testcaseSigBase struct {
 	Params       sigBaseInput
 	IsResponse   bool
 	SourceFile   string // defaults to the specification request or response file
+	RequestFile  string // The request that a response answers, for components with the 'req' parameter
 	ExpectedFile string
 	ExpectedErr  ErrCode
 }
@@ -194,16 +195,10 @@ func runTestSigBase(t *testing.T, tc testcaseSigBase) {
 		if sourceFile == "" {
 			sourceFile = "rfc-test-response.txt"
 		}
-		resptxt, err := os.Open(fmt.Sprintf("testdata/%s", sourceFile))
-		if err != nil {
-			t.Fatal(err)
+		hrr.Resp = sigtest.ReadResponse(t, sourceFile)
+		if tc.RequestFile != "" {
+			hrr.Resp.Request = sigtest.ReadRequest(t, tc.RequestFile)
 		}
-
-		resp, err := http.ReadResponse(bufio.NewReader(resptxt), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		hrr.Resp = resp
 	} else {
 		if sourceFile == "" {
 			sourceFile = "rfc-test-request.txt"
@@ -326,6 +321,15 @@ func makeComponents(ids ...string) []componentID {
 }
 func dictMember(key string) SignedField {
 	return SignedField{Name: "example-dict", Parameters: map[string]any{"key": key}}
+}
+
+// reqFields are fields with the 'req' parameter, taken from the request that a response answers.
+func reqFields(fields ...string) []SignedField {
+	sfs := Fields(fields...)
+	for _, sf := range sfs {
+		sf.Parameters["req"] = true
+	}
+	return sfs
 }
 
 func makeComponentIDs(sfs ...SignedField) []componentID {
