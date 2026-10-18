@@ -117,6 +117,65 @@ func TestSignatureBase(t *testing.T) {
 			},
 			ExpectedErr: ErrInvalidMetadata,
 		},
+		{
+			// RFC 9421 Section 2.1.2
+			Name: "DictionaryMembers",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(dictMember("a"), dictMember("d"), dictMember("b"), dictMember("c")),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			SourceFile:   "request_dictionary.txt",
+			ExpectedFile: "request_dictionary_sigbase.txt",
+		},
+		{
+			Name: "DictionaryMemberMissing",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(dictMember("z")),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			SourceFile:  "request_dictionary.txt",
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name: "DictionaryMemberOfNonDictionary",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(SignedField{Name: "content-type", Parameters: map[string]any{"key": "a"}}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name: "RequestParameterOnRequest",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(SignedField{Name: "@authority", Parameters: map[string]any{"req": true}}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name:       "RequestParameterWithoutRequest",
+			IsResponse: true,
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(SignedField{Name: "@authority", Parameters: map[string]any{"req": true}}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name:       "RequestComponentOnResponse",
+			IsResponse: true,
+			Params: sigBaseInput{
+				Components:     makeComponents("@authority"),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidSignatureOptions,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -265,6 +324,10 @@ func makeComponents(ids ...string) []componentID {
 	}
 	return cids
 }
+func dictMember(key string) SignedField {
+	return SignedField{Name: "example-dict", Parameters: map[string]any{"key": key}}
+}
+
 func makeComponentIDs(sfs ...SignedField) []componentID {
 
 	cids := []componentID{}

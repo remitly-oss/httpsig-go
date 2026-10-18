@@ -122,6 +122,91 @@ func TestSpecVerify(t *testing.T) {
 	}
 }
 
+// TestSpecComponentParameters verifies messages that cover components with the 'key' and 'req' parameters.
+func TestSpecComponentParameters(t *testing.T) {
+	cases := []struct {
+		Name        string
+		Label       string
+		Key         KeySpec
+		SignedFile  string
+		RequestFile string // The request that a signed response answers
+		Authority   string // Overrides the request's authority, if set
+		ExpectedErr ErrCode
+	}{
+		{
+			// draft-ietf-webbotauth-httpsig-protocol-00 Appendix E.2.1
+			Name:  "SignatureAgentMember",
+			Label: "sig2",
+			Key: KeySpec{
+				KeyID:  "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U",
+				Algo:   Algo_ED25519,
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-ed25519.pub"),
+			},
+			SignedFile: "webbotauth_e21_request_signed.txt",
+		},
+		{
+			// RFC 9421 Section 2.4
+			Name:  "RequestComponentsInResponse",
+			Label: "reqres",
+			Key: KeySpec{
+				KeyID:  "test-key-ecc-p256",
+				Algo:   Algo_ECDSA_P256_SHA256,
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-ecc-p256.pub"),
+			},
+			SignedFile:  "rfc_2_4_response_signed.txt",
+			RequestFile: "rfc-test-request.txt",
+		},
+		{
+			Name:  "RequestComponentsInResponseOtherAuthority",
+			Label: "reqres",
+			Key: KeySpec{
+				KeyID:  "test-key-ecc-p256",
+				Algo:   Algo_ECDSA_P256_SHA256,
+				PubKey: sigtest.ReadTestPubkey(t, "test-key-ecc-p256.pub"),
+			},
+			SignedFile:  "rfc_2_4_response_signed.txt",
+			RequestFile: "rfc-test-request.txt",
+			Authority:   "example.org",
+			ExpectedErr: ErrSigVerification,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			ver, err := NewVerifier(&fixedKeyFetch{
+				requiredKeyID: tc.Key.KeyID,
+				key:           tc.Key,
+			}, VerifyProfile{
+				SignatureLabel:         tc.Label,
+				DisableTimeEnforcement: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var verifyErr error
+			if tc.RequestFile == "" {
+				_, verifyErr = ver.Verify(sigtest.ReadRequest(t, tc.SignedFile))
+			} else {
+				resptxt, err := os.Open(fmt.Sprintf("testdata/%s", tc.SignedFile))
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err := http.ReadResponse(bufio.NewReader(resptxt), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp.Request = sigtest.ReadRequest(t, tc.RequestFile)
+				if tc.Authority != "" {
+					resp.Request.Host = tc.Authority
+				}
+				_, verifyErr = ver.VerifyResponse(resp)
+			}
+			sigtest.Diff(t, tc.ExpectedErr, errCode(verifyErr), "Wrong error code")
+		})
+	}
+}
+
 // TestSpecBase test recreation of the signature bases from the spec
 func TestSpecBase(t *testing.T) {
 	cases := []testcaseSigBase{

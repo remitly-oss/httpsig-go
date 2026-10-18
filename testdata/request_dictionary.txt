@@ -1,0 +1,4 @@
+GET /foo HTTP/1.1
+Host: example.com
+Example-Dict:  a=1, b=2;x=1;y=2, c=(a   b    c), d
+
