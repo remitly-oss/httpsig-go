@@ -158,6 +158,8 @@ func (s *Signer) Sign(req *http.Request) error {
 		})
 }
 
+// SignResponse signs the response and adds the signature headers to the response.
+// Fields with the 'req' parameter are taken from resp.Request, the request the response answers.
 func (s *Signer) SignResponse(resp *http.Response) error {
 	baseParams, err := s.baseParameters()
 	if err != nil {

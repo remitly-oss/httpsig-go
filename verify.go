@@ -140,6 +140,8 @@ func (ver *Verifier) Verify(req *http.Request) (VerifyResult, error) {
 	})
 }
 
+// VerifyResponse verifies the signature(s) in an http response. Any invalid signature will return an error.
+// Components with the 'req' parameter are taken from resp.Request, the request the response answers.
 func (ver *Verifier) VerifyResponse(resp *http.Response) (VerifyResult, error) {
 	return ver.verify(httpMessage{
 		IsResponse: true,
