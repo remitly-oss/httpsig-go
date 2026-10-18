@@ -211,6 +211,15 @@ func (cID componentID) sourceMessage(msg httpMessage) (httpMessage, error) {
 	return httpMessage{Req: msg.Resp.Request}, nil
 }
 
+// fromRequest reports whether the component has the 'req' parameter set.
+func (cID componentID) fromRequest() bool {
+	if cID.Item.Params == nil {
+		return false
+	}
+	req, _ := cID.Item.Params.Get("req")
+	return req == true
+}
+
 // dictionaryMemberValue is the serialized member that the 'key' parameter names (RFC 9421 Section 2.1.2).
 func (cID componentID) dictionaryMemberValue(values []string, key any) (string, error) {
 	memberKey, ok := key.(string)
