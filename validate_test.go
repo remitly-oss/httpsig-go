@@ -205,6 +205,41 @@ func TestValidateProfile(t *testing.T) {
 			Expected:    ErrCode(""),
 		},
 		{
+			Name: "RequiredFieldCoveredOnlyFromRequest",
+			Sig: extractedSignature{
+				Label:     "sig1",
+				Signature: []byte{},
+				Input: sigBaseInput{
+					Components:     componentsIDs(append(Fields("@status"), reqFields("content-digest")...)),
+					MetadataParams: []Metadata{},
+					MetadataValues: nil,
+				},
+			},
+			Profile: VerifyProfile{
+				RequiredFields: Fields("content-digest"), // The response's own content-digest
+			},
+			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
+			Expected:    ErrSigProfile,
+			ExpectedMsg: "Signature missing required field 'content-digest'",
+		},
+		{
+			Name: "RequiredFieldsFromRequestAndResponse",
+			Sig: extractedSignature{
+				Label:     "sig1",
+				Signature: []byte{},
+				Input: sigBaseInput{
+					Components:     componentsIDs(append(reqFields("@authority"), Fields("content-digest")...)),
+					MetadataParams: []Metadata{},
+					MetadataValues: nil,
+				},
+			},
+			Profile: VerifyProfile{
+				RequiredFields: append(reqFields("@authority"), Fields("content-digest")...),
+			},
+			KeySpecAlgo: Algo_ECDSA_P256_SHA256,
+			Expected:    ErrCode(""),
+		},
+		{
 			Name: "NoRequiredFields",
 			Sig: extractedSignature{
 				Label:     "sig1",

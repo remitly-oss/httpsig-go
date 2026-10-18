@@ -16,6 +16,7 @@ type testcaseSigBase struct {
 	Params       sigBaseInput
 	IsResponse   bool
 	SourceFile   string // defaults to the specification request or response file
+	RequestFile  string // The request that a response answers, for components with the 'req' parameter
 	ExpectedFile string
 	ExpectedErr  ErrCode
 }
@@ -117,6 +118,65 @@ func TestSignatureBase(t *testing.T) {
 			},
 			ExpectedErr: ErrInvalidMetadata,
 		},
+		{
+			// RFC 9421 Section 2.1.2
+			Name: "DictionaryMembers",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(dictMember("a"), dictMember("d"), dictMember("b"), dictMember("c")),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			SourceFile:   "request_dictionary.txt",
+			ExpectedFile: "request_dictionary_sigbase.txt",
+		},
+		{
+			Name: "DictionaryMemberMissing",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(dictMember("z")),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			SourceFile:  "request_dictionary.txt",
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name: "DictionaryMemberOfNonDictionary",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(SignedField{Name: "content-type", Parameters: map[string]any{"key": "a"}}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name: "RequestParameterOnRequest",
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(SignedField{Name: "@authority", Parameters: map[string]any{"req": true}}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name:       "RequestParameterWithoutRequest",
+			IsResponse: true,
+			Params: sigBaseInput{
+				Components:     makeComponentIDs(SignedField{Name: "@authority", Parameters: map[string]any{"req": true}}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidComponent,
+		},
+		{
+			Name:       "RequestComponentOnResponse",
+			IsResponse: true,
+			Params: sigBaseInput{
+				Components:     makeComponents("@authority"),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrInvalidSignatureOptions,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -135,16 +195,10 @@ func runTestSigBase(t *testing.T, tc testcaseSigBase) {
 		if sourceFile == "" {
 			sourceFile = "rfc-test-response.txt"
 		}
-		resptxt, err := os.Open(fmt.Sprintf("testdata/%s", sourceFile))
-		if err != nil {
-			t.Fatal(err)
+		hrr.Resp = sigtest.ReadResponse(t, sourceFile)
+		if tc.RequestFile != "" {
+			hrr.Resp.Request = sigtest.ReadRequest(t, tc.RequestFile)
 		}
-
-		resp, err := http.ReadResponse(bufio.NewReader(resptxt), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		hrr.Resp = resp
 	} else {
 		if sourceFile == "" {
 			sourceFile = "rfc-test-request.txt"
@@ -265,6 +319,19 @@ func makeComponents(ids ...string) []componentID {
 	}
 	return cids
 }
+func dictMember(key string) SignedField {
+	return SignedField{Name: "example-dict", Parameters: map[string]any{"key": key}}
+}
+
+// reqFields are fields with the 'req' parameter, taken from the request that a response answers.
+func reqFields(fields ...string) []SignedField {
+	sfs := Fields(fields...)
+	for _, sf := range sfs {
+		sf.Parameters["req"] = true
+	}
+	return sfs
+}
+
 func makeComponentIDs(sfs ...SignedField) []componentID {
 
 	cids := []componentID{}

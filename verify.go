@@ -14,7 +14,6 @@ import (
 	"math/big"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	sfv "github.com/dunglas/httpsfv"
@@ -66,8 +65,8 @@ type TrustedIssuer struct {
 }
 
 type VerifyProfile struct {
-	SignatureLabel     string // Which signature this profile applies to.
-	RequiredFields     []SignedField
+	SignatureLabel     string        // Which signature this profile applies to.
+	RequiredFields     []SignedField // Matched by name. A field with the 'req' parameter matches only a covered component that also has it.
 	RequiredMetadata   []Metadata
 	DisallowedMetadata []Metadata
 	AllowedAlgorithms  []Algorithm // Which algorithms are allowed, either from keyid meta or in the KeySpec
@@ -141,6 +140,8 @@ func (ver *Verifier) Verify(req *http.Request) (VerifyResult, error) {
 	})
 }
 
+// VerifyResponse verifies the signature(s) in an http response. Any invalid signature will return an error.
+// Components with the 'req' parameter are taken from resp.Request, the request the response answers.
 func (ver *Verifier) VerifyResponse(resp *http.Response) (VerifyResult, error) {
 	return ver.verify(httpMessage{
 		IsResponse: true,
@@ -454,16 +455,21 @@ func (vp VerifyProfile) validate(sig extractedSignature, ksAlgo Algorithm, ks Ke
 
 	// Validate required fields are present in signature
 	if len(vp.RequiredFields) > 0 {
+		// A component with the 'req' parameter comes from the request, so it does not cover the response's component of the same name (RFC 9421 Section 2.4)
+		type coveredComponent struct {
+			name        string
+			fromRequest bool
+		}
 		// Create a map of component names from the signature for efficient lookup
-		sigComponentNames := make(map[string]bool)
+		sigComponents := make(map[coveredComponent]bool)
 		for _, component := range sig.Input.Components {
-			sigComponentNames[component.Name] = true
+			sigComponents[coveredComponent{component.Name, component.fromRequest()}] = true
 		}
 
 		// Check that all required fields are present
 		for _, requiredField := range vp.RequiredFields {
-			fieldName := strings.ToLower(requiredField.Name)
-			if !sigComponentNames[fieldName] {
+			required := requiredField.componentID()
+			if !sigComponents[coveredComponent{required.Name, required.fromRequest()}] {
 				return newError(ErrSigProfile, fmt.Sprintf("Signature missing required field '%s'", requiredField.Name))
 			}
 		}

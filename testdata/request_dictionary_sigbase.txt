@@ -1,0 +1,5 @@
+"example-dict";key="a": 1
+"example-dict";key="d": ?1
+"example-dict";key="b": 2;x=1;y=2
+"example-dict";key="c": (a b c)
+"@signature-params": ("example-dict";key="a" "example-dict";key="d" "example-dict";key="b" "example-dict";key="c")

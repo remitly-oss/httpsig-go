@@ -166,8 +166,11 @@ func (cID componentID) signatureName() (string, error) {
 
 // signatureValue is the components value required by the signature.
 func (cID componentID) signatureValue(msg httpMessage) (string, error) {
+	msg, err := cID.sourceMessage(msg)
+	if err != nil {
+		return "", err
+	}
 	val := ""
-	var err error
 	if strings.HasPrefix(cID.Name, "@") {
 		val, err = deriveComponentValue(msg, cID)
 		if err != nil {
@@ -178,11 +181,62 @@ func (cID componentID) signatureValue(msg httpMessage) (string, error) {
 		if len(values) == 0 {
 			return "", newError(ErrInvalidComponent, fmt.Sprintf("Message is missing required component '%s'", cID.Name))
 		}
+		if key, found := cID.Item.Params.Get("key"); found {
+			return cID.dictionaryMemberValue(values, key)
+		}
 		// TODO Handle multi value
 		if len(values) > 1 {
 			return "", newError(ErrUnsupported, fmt.Sprintf("This library does yet support signatures for components/headers with multiple values: %s", cID.Name))
 		}
 		val = msg.Headers().Get(cID.Name)
+	}
+	return val, nil
+}
+
+// sourceMessage is the message the component value comes from. The 'req' parameter selects the request that the response answers (RFC 9421 Section 2.4).
+func (cID componentID) sourceMessage(msg httpMessage) (httpMessage, error) {
+	req, found := cID.Item.Params.Get("req")
+	if !found {
+		return msg, nil
+	}
+	if flag, ok := req.(bool); !ok || !flag {
+		return httpMessage{}, newError(ErrInvalidComponent, fmt.Sprintf("The 'req' parameter of component '%s' must be true", cID.Name))
+	}
+	if !msg.IsResponse {
+		return httpMessage{}, newError(ErrInvalidComponent, fmt.Sprintf("Component '%s' has the 'req' parameter but the message is a request", cID.Name))
+	}
+	if msg.Resp.Request == nil {
+		return httpMessage{}, newError(ErrInvalidComponent, fmt.Sprintf("Component '%s' has the 'req' parameter but the response has no associated request", cID.Name))
+	}
+	return httpMessage{Req: msg.Resp.Request}, nil
+}
+
+// fromRequest reports whether the component has the 'req' parameter set.
+func (cID componentID) fromRequest() bool {
+	if cID.Item.Params == nil {
+		return false
+	}
+	req, _ := cID.Item.Params.Get("req")
+	return req == true
+}
+
+// dictionaryMemberValue is the serialized member that the 'key' parameter names (RFC 9421 Section 2.1.2).
+func (cID componentID) dictionaryMemberValue(values []string, key any) (string, error) {
+	memberKey, ok := key.(string)
+	if !ok {
+		return "", newError(ErrInvalidComponent, fmt.Sprintf("The 'key' parameter of component '%s' must be a string", cID.Name))
+	}
+	dict, err := sfv.UnmarshalDictionary(values)
+	if err != nil {
+		return "", newError(ErrInvalidComponent, fmt.Sprintf("Component '%s' has the 'key' parameter but is not a Dictionary", cID.Name), err)
+	}
+	member, found := dict.Get(memberKey)
+	if !found {
+		return "", newError(ErrInvalidComponent, fmt.Sprintf("Dictionary '%s' has no member '%s'", cID.Name, memberKey))
+	}
+	val, err := sfv.Marshal(member)
+	if err != nil {
+		return "", newError(ErrInvalidComponent, fmt.Sprintf("Unable to serialize member '%s' of '%s'", memberKey, cID.Name), err)
 	}
 	return val, nil
 }
@@ -198,7 +252,7 @@ func deriveComponentValueResponse(resp *http.Response, component componentID) (s
 	case "@status":
 		return strconv.Itoa(resp.StatusCode), nil
 	}
-	return "", nil
+	return "", newError(ErrInvalidSignatureOptions, fmt.Sprintf("Unsupported derived component identifier for a response '%s'. Use the 'req' parameter for a request component.", component.Name))
 }
 
 func deriveComponentValueRequest(req *http.Request, component componentID) (string, error) {
