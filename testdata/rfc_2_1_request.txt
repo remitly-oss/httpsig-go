@@ -1,0 +1,10 @@
+GET /foo HTTP/1.1
+Host: www.example.com
+Date: Tue, 20 Apr 2021 02:07:56 GMT
+X-OWS-Header:   Leading and trailing whitespace.
+X-Obs-Fold-Header: Obsolete
+    line folding.
+Cache-Control: max-age=60
+Cache-Control:    must-revalidate
+Example-Dict:  a=1,    b=2;x=1;y=2,   c=(a   b   c)
+

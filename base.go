@@ -178,11 +178,16 @@ func (cID componentID) signatureValue(msg httpMessage) (string, error) {
 		if len(values) == 0 {
 			return "", newError(ErrInvalidComponent, fmt.Sprintf("Message is missing required component '%s'", cID.Name))
 		}
-		// TODO Handle multi value
 		if len(values) > 1 {
-			return "", newError(ErrUnsupported, fmt.Sprintf("This library does yet support signatures for components/headers with multiple values: %s", cID.Name))
+			// The sf, bs and key parameters each define their own handling of multiple field lines (RFC 9421 Section 2.1).
+			for _, param := range []string{"sf", "bs", "key"} {
+				if _, found := cID.Item.Params.Get(param); found {
+					return "", newError(ErrUnsupported, fmt.Sprintf("This library does not yet support the '%s' parameter for a field with multiple field lines: %s", param, cID.Name))
+				}
+			}
 		}
-		val = msg.Headers().Get(cID.Name)
+		// Multiple field lines are combined into one value, in order, separated by ", " (RFC 9421 Section 2.1).
+		val = strings.Join(values, ", ")
 	}
 	return val, nil
 }

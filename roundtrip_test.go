@@ -458,6 +458,40 @@ func TestRoundTripMultiSig(t *testing.T) {
 	}
 }
 
+// TestSignKeepsSignaturesOnEveryFieldLine ensures that signing keeps the existing signatures on every Signature field line.
+func TestSignKeepsSignaturesOnEveryFieldLine(t *testing.T) {
+	// sig-b22 is on the second Signature field line.
+	req := sigtest.ReadRequest(t, "request_signature_lines.txt")
+
+	signer, err := httpsig.NewSigner(httpsig.SigningProfile{
+		Algorithm: types.Algo_ED25519,
+		Fields:    httpsig.DefaultRequiredFields,
+		Metadata:  []httpsig.Metadata{httpsig.MetaCreated, httpsig.MetaKeyID},
+		Label:     "sig-new",
+	}, httpsig.SigningKey{
+		Key:       keyutil.MustReadPrivateKeyFile("testdata/test-key-ed25519.key"),
+		MetaKeyID: "test-key-ed25519",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signer.Sign(req); err != nil {
+		t.Fatal(err)
+	}
+
+	keys := keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
+		"test-key-rsa-pss": {
+			KeyID:  "test-key-rsa-pss",
+			Algo:   types.Algo_RSA_PSS_SHA512,
+			PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
+		},
+	})
+	_, err = httpsig.Verify(req, keys, httpsig.VerifyProfile{SignatureLabel: "sig-b22", DisableTimeEnforcement: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func createVerifyProfile(label string) httpsig.VerifyProfile {
 	vp := httpsig.DefaultVerifyProfile
 	vp.SignatureLabel = label

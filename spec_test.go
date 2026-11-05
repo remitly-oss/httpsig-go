@@ -126,6 +126,17 @@ func TestSpecVerify(t *testing.T) {
 func TestSpecBase(t *testing.T) {
 	cases := []testcaseSigBase{
 		{
+			// RFC 9421 Section 2.1: the two Cache-Control field lines are one value, joined with ", ".
+			Name: "Section2.1-MultipleFieldLines",
+			Params: sigBaseInput{
+				Components:     makeComponents("cache-control"),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			SourceFile:   "rfc_2_1_request.txt",
+			ExpectedFile: "rfc_2_1_cache_control_sigbase.txt",
+		},
+		{
 			Name: "b21",
 			Params: sigBaseInput{
 				Components: []componentID{},
