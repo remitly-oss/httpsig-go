@@ -158,6 +158,42 @@ func TestVerifyInvalid(t *testing.T) {
 	}
 }
 
+// TestVerifyMultipleFieldLines verifies a signature whose Signature or Signature-Input member is on a later field line.
+// The field lines of a Dictionary field are one value (RFC 9110 Section 5.3, RFC 8941 Section 4.2).
+func TestVerifyMultipleFieldLines(t *testing.T) {
+	testcases := []struct {
+		Name        string
+		RequestFile string
+	}{
+		{
+			Name:        "SignatureOnTwoLines",
+			RequestFile: "request_signature_lines.txt",
+		},
+		{
+			Name:        "SignatureInputOnTwoLines",
+			RequestFile: "request_signature_input_lines.txt",
+		},
+	}
+
+	keys := keyman.NewKeyFetchInMemory(map[string]key.KeySpec{
+		"test-key-rsa-pss": {
+			KeyID:  "test-key-rsa-pss",
+			Algo:   types.Algo_RSA_PSS_SHA512,
+			PubKey: keyutil.MustReadPublicKeyFile("testdata/test-key-rsa-pss.pub"),
+		},
+	})
+
+	for _, tc := range testcases {
+		t.Run(tc.Name, func(t *testing.T) {
+			// sig-b22 is on the second field line.
+			_, err := httpsig.Verify(sigtest.ReadRequest(t, tc.RequestFile), keys, httpsig.VerifyProfile{SignatureLabel: "sig-b22", DisableTimeEnforcement: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 type fixedMetadataProvider struct {
 	values map[httpsig.Metadata]any
 }

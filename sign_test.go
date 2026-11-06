@@ -42,9 +42,38 @@ func TestSignatureBase(t *testing.T) {
 			ExpectedErr: ErrInvalidComponent,
 		},
 		{
-			Name: "NoMultiValueSuport",
+			Name: "MultipleFieldLinesWithSf",
 			Params: sigBaseInput{
-				Components:     makeComponents("one"),
+				Components: makeComponentIDs(SignedField{
+					Name:       "one",
+					Parameters: map[string]any{"sf": true},
+				}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrUnsupported,
+			SourceFile:  "request_multivalue.txt",
+		},
+		{
+			Name: "MultipleFieldLinesWithBs",
+			Params: sigBaseInput{
+				Components: makeComponentIDs(SignedField{
+					Name:       "one",
+					Parameters: map[string]any{"bs": true},
+				}),
+				MetadataParams: []Metadata{},
+				MetadataValues: emptyMeta,
+			},
+			ExpectedErr: ErrUnsupported,
+			SourceFile:  "request_multivalue.txt",
+		},
+		{
+			Name: "MultipleFieldLinesWithKey",
+			Params: sigBaseInput{
+				Components: makeComponentIDs(SignedField{
+					Name:       "one",
+					Parameters: map[string]any{"key": "a"},
+				}),
 				MetadataParams: []Metadata{},
 				MetadataValues: emptyMeta,
 			},

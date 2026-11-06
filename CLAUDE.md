@@ -113,7 +113,8 @@ The codebase uses standard Go testing with:
 ## Important Implementation Notes
 
 - Signature base calculation follows RFC 9421 exactly
-- Multi-value headers are not yet supported (will return error)
+- Signature and Signature-Input are parsed from all of their field lines
+- A covered field sent on multiple field lines is combined into one value separated by ", " (RFC 9421 Section 2.1); with the `sf`, `bs` or `key` parameter it still returns an error
 - Content-Digest is automatically calculated when included in signature fields
 - Request body is preserved during signing/verification by reading and reconstructing
 - Context keys are used to pass verification results through HTTP middleware

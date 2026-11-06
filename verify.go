@@ -231,27 +231,28 @@ func parseSignaturesFromRequest(headers http.Header, allowEmpty bool) (signature
 	}
 
 	/* Pull signature and signature-input header */
-	sigHeader := headers.Get("signature")
-	if sigHeader == "" && !allowEmpty {
+	// Each header may be sent on multiple field lines. A Dictionary is parsed from all of its field lines combined (RFC 9110 Section 5.3, RFC 8941 Section 4.2).
+	sigHeader := headers.Values("signature")
+	if len(sigHeader) == 0 && !allowEmpty {
 		return psd, newError(ErrNoSigMissingSignature, "Missing signature header")
 	}
-	sigInputHeader := headers.Get("signature-input")
-	if sigInputHeader == "" && !allowEmpty {
+	sigInputHeader := headers.Values("signature-input")
+	if len(sigInputHeader) == 0 && !allowEmpty {
 		return psd, newError(ErrNoSigMissingSignature, "Missing signature-input header")
 	}
 
 	/* Parse headers into their appropriate HTTP structured field values */
 	// signature-input must be a HTTP structured field value of type Dictionary.
 	var err error
-	if sigInputHeader != "" {
-		psd.SigInputs, err = sfv.UnmarshalDictionary([]string{sigInputHeader})
+	if len(sigInputHeader) > 0 {
+		psd.SigInputs, err = sfv.UnmarshalDictionary(sigInputHeader)
 		if err != nil {
 			return psd, newError(ErrNoSigInvalidSignature, "Invalid signature-input header. Not a valid Dictionary", err)
 		}
 	}
-	if sigHeader != "" {
+	if len(sigHeader) > 0 {
 		// signature must be a HTTP structured field value of type Dictionary.
-		psd.Sigs, err = sfv.UnmarshalDictionary([]string{sigHeader})
+		psd.Sigs, err = sfv.UnmarshalDictionary(sigHeader)
 		if err != nil {
 			return psd, newError(ErrNoSigInvalidSignature, "Invalid signature header. Not a valid Dictionary", err)
 		}
