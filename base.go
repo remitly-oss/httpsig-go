@@ -239,10 +239,13 @@ func deriveComponentValueRequest(req *http.Request, component componentID) (stri
 // deriveTargetURI resolves to an absolute form as required by RFC 9110 and referenced by the http signatures spec.
 // The target URI excludes the reference's fragment component, if any, since fragment identifiers are reserved for client-side processing
 func deriveTargetURI(req *http.Request) string {
-	scheme := "https"
-	if req.TLS == nil {
-		scheme = "http"
+	scheme := "http"
+	if xfp := req.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		scheme = xfp
+	} else if rus := req.URL.Scheme; rus != "" {
+		scheme = rus
+	} else if req.TLS != nil {
+		scheme = "https"
 	}
-
 	return fmt.Sprintf("%s://%s%s", scheme, req.Host, req.URL.RequestURI())
 }
